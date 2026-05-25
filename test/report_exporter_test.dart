@@ -85,7 +85,6 @@ void main() {
       );
       expect(documentXml, contains('COMMUNITY SURVEY TOOL'));
       expect(documentXml, contains('<w:drawing>'));
-      expect(documentXml, contains('w:h="18700"'));
       expect(documentXml, contains('Ana Cruz'));
       expect(documentXml, contains('Nico Cruz'));
       expect(documentXml, contains('Barangay 1'));
@@ -122,12 +121,6 @@ void main() {
       expect(documentXml, contains('Shrimp'));
       expect(documentXml, contains('Bad for health of family, Others'));
       expect(documentXml, contains('Partner concern'));
-      for (var pageIndex = 1; pageIndex <= 6; pageIndex++) {
-        expect(
-          archive.findFile('word/media/survey-1-page-$pageIndex.png'),
-          isNotNull,
-        );
-      }
       expect(archive.findFile('word/media/college-of-nursing.png'), isNotNull);
       expect(
         archive.findFile('word/media/bulacan-state-university.png'),

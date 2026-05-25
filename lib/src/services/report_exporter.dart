@@ -5,7 +5,6 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -103,70 +102,23 @@ Future<List<int>> _buildDocxBytes(List<HealthSubmission> submissions) async {
     archive.addFile(ArchiveFile.bytes(name, await _loadAssetBytes(assetPath)));
   }
 
-  final templatePages = await _buildDocxTemplatePages(submissions);
-
   addFile('[Content_Types].xml', _contentTypesXml);
   addFile('_rels/.rels', _packageRelsXml);
   addFile('docProps/app.xml', _appPropsXml);
   addFile('docProps/core.xml', _corePropsXml());
-  addFile('word/_rels/document.xml.rels', _documentRelsXml(templatePages));
+  addFile('word/_rels/document.xml.rels', _documentRelsXml);
   addFile('word/styles.xml', _stylesXml);
-  addFile('word/document.xml', _documentXml(submissions, templatePages));
+  addFile('word/document.xml', _documentXml(submissions));
   await addAssetFile('word/media/college-of-nursing.png', _collegeLogoAsset);
   await addAssetFile(
     'word/media/bulacan-state-university.png',
     _universityLogoAsset,
   );
-  for (final page in templatePages) {
-    archive.addFile(ArchiveFile.bytes(page.mediaPath, page.bytes));
-  }
 
   return ZipEncoder().encode(archive);
 }
 
-Future<List<_DocxTemplatePage>> _buildDocxTemplatePages(
-  List<HealthSubmission> submissions,
-) async {
-  final records = submissions.isEmpty
-      ? const <HealthSubmission?>[null]
-      : submissions.cast<HealthSubmission?>();
-  final pages = <_DocxTemplatePage>[];
-  var relationshipId = 4;
-  var docPrId = 10;
-
-  for (var recordIndex = 0; recordIndex < records.length; recordIndex++) {
-    final submission = records[recordIndex];
-    for (
-      var pageIndex = 0;
-      pageIndex < _templatePdfPageAssets.length;
-      pageIndex++
-    ) {
-      final bytes = await _renderDocxTemplatePagePng(submission, pageIndex);
-      pages.add(
-        _DocxTemplatePage(
-          relationshipId: 'rId$relationshipId',
-          mediaPath:
-              'word/media/survey-${recordIndex + 1}-page-${pageIndex + 1}.png',
-          bytes: bytes,
-          docPrId: docPrId,
-          pageNumber: pageIndex + 1,
-        ),
-      );
-      relationshipId++;
-      docPrId++;
-    }
-  }
-
-  return pages;
-}
-
-String _documentXml(
-  List<HealthSubmission> submissions,
-  List<_DocxTemplatePage> templatePages,
-) {
-  final hasAppendix = submissions.any(
-    (submission) => _surveyResponseSections(submission).isNotEmpty,
-  );
+String _documentXml(List<HealthSubmission> submissions) {
   final buffer = StringBuffer()
     ..writeln('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
     ..writeln(
@@ -174,158 +126,19 @@ String _documentXml(
     )
     ..writeln('<w:body>');
 
-  for (var index = 0; index < templatePages.length; index++) {
-    final isLastTemplatePage = index == templatePages.length - 1;
-    buffer.write(
-      _docxTemplatePageParagraph(
-        templatePages[index],
-        sectionProperties: isLastTemplatePage && hasAppendix
-            ? _templateDocxSectionProperties(nextPage: true)
-            : null,
-      ),
-    );
-    if (!isLastTemplatePage) {
+  for (var index = 0; index < submissions.length; index++) {
+    if (index > 0) {
       buffer.writeln(_pageBreakParagraph());
     }
-  }
-
-  if (hasAppendix) {
-    for (var index = 0; index < submissions.length; index++) {
-      if (index > 0) {
-        buffer.writeln(_pageBreakParagraph());
-      }
-      buffer.write(_surveyResponseDocumentSection(submissions[index]));
-    }
+    buffer.write(_surveyDocumentSection(submissions[index], index));
   }
 
   buffer
     ..writeln(
-      hasAppendix
-          ? _normalDocxSectionProperties()
-          : _templateDocxSectionProperties(),
+      '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="720" w:right="540" w:bottom="720" w:left="540" w:header="360" w:footer="360" w:gutter="0"/></w:sectPr>',
     )
     ..writeln('</w:body>')
     ..writeln('</w:document>');
-
-  return buffer.toString();
-}
-
-class _DocxTemplatePage {
-  const _DocxTemplatePage({
-    required this.relationshipId,
-    required this.mediaPath,
-    required this.bytes,
-    required this.docPrId,
-    required this.pageNumber,
-  });
-
-  final String relationshipId;
-  final String mediaPath;
-  final Uint8List bytes;
-  final int docPrId;
-  final int pageNumber;
-}
-
-const _docxTemplatePageWidthTwips = 12240;
-const _docxTemplatePageHeightTwips = 18700;
-const _docxTemplatePageWidthEmu = 7772400;
-const _docxTemplatePageHeightEmu = 11874500;
-
-String _templateDocxSectionProperties({bool nextPage = false}) {
-  final type = nextPage ? '<w:type w:val="nextPage"/>' : '';
-  return '<w:sectPr>$type<w:pgSz w:w="$_docxTemplatePageWidthTwips" w:h="$_docxTemplatePageHeightTwips"/><w:pgMar w:top="0" w:right="0" w:bottom="0" w:left="0" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>';
-}
-
-String _normalDocxSectionProperties() {
-  return '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="720" w:right="540" w:bottom="720" w:left="540" w:header="360" w:footer="360" w:gutter="0"/></w:sectPr>';
-}
-
-String _docxTemplatePageParagraph(
-  _DocxTemplatePage page, {
-  String? sectionProperties,
-}) {
-  final escapedName = _xmlEscape(
-    'COMMUNITY SURVEY TOOL Page ${page.pageNumber}',
-  );
-  final sectPr = sectionProperties ?? '';
-  return '''
-<w:p>
-  <w:pPr><w:spacing w:before="0" w:after="0"/>$sectPr</w:pPr>
-  <w:r>
-    <w:drawing>
-      <wp:inline distT="0" distB="0" distL="0" distR="0">
-        <wp:extent cx="$_docxTemplatePageWidthEmu" cy="$_docxTemplatePageHeightEmu"/>
-        <wp:docPr id="${page.docPrId}" name="$escapedName" descr="$escapedName"/>
-        <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>
-        <a:graphic>
-          <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
-            <pic:pic>
-              <pic:nvPicPr><pic:cNvPr id="0" name="$escapedName"/><pic:cNvPicPr/></pic:nvPicPr>
-              <pic:blipFill><a:blip r:embed="${page.relationshipId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
-              <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="$_docxTemplatePageWidthEmu" cy="$_docxTemplatePageHeightEmu"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
-            </pic:pic>
-          </a:graphicData>
-        </a:graphic>
-      </wp:inline>
-    </w:drawing>
-  </w:r>
-</w:p>
-''';
-}
-
-String _surveyResponseDocumentSection(HealthSubmission submission) {
-  final sections = _surveyResponseSections(submission);
-  if (sections.isEmpty) {
-    return '';
-  }
-
-  final buffer = StringBuffer()
-    ..writeln(_sectionHeading('Captured PDF Field Responses'))
-    ..writeln(
-      _table(
-        [
-          ['Field', 'Response'],
-          ['Respondent name', submission.respondentName],
-          ['Address', submission.address],
-          ['Family members count', '${submission.familyMembersCount}'],
-          ['Health problems', _listOrBlank(submission.healthProblems)],
-          ['Vaccination status', submission.vaccinationStatus],
-          ['Water and sanitation status', submission.waterSanitation],
-          ['Nutritional status', submission.nutritionalStatus],
-          ['Community concerns', _listOrBlank(submission.communityConcerns)],
-          ['Notes', submission.notes],
-          for (var index = 0; index < submission.familyMembers.length; index++)
-            [
-              'Family member ${index + 1}',
-              [
-                submission.familyMembers[index].name,
-                submission.familyMembers[index].relationship,
-                submission.familyMembers[index].age?.toString() ?? '',
-                _listOrBlank(submission.familyMembers[index].healthProblems),
-                submission.familyMembers[index].vaccinationStatus,
-                submission.familyMembers[index].nutritionalStatus,
-              ].where((value) => value.trim().isNotEmpty).join(' | '),
-            ],
-        ],
-        headerRows: 1,
-        fontSize: 10,
-      ),
-    );
-
-  for (final section in sections) {
-    buffer
-      ..writeln(_subHeading(section.title))
-      ..writeln(
-        _table(
-          [
-            ['Field', 'Response'],
-            for (final row in section.rows) [row.field, row.response],
-          ],
-          headerRows: 1,
-          fontSize: 10,
-        ),
-      );
-  }
 
   return buffer.toString();
 }
@@ -1356,32 +1169,14 @@ const _packageRelsXml = '''
 </Relationships>
 ''';
 
-String _documentRelsXml(List<_DocxTemplatePage> templatePages) {
-  final buffer = StringBuffer()
-    ..writeln('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
-    ..writeln(
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
-    )
-    ..writeln(
-      '  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>',
-    )
-    ..writeln(
-      '  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/college-of-nursing.png"/>',
-    )
-    ..writeln(
-      '  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/bulacan-state-university.png"/>',
-    );
-
-  for (final page in templatePages) {
-    final target = page.mediaPath.replaceFirst('word/', '');
-    buffer.writeln(
-      '  <Relationship Id="${page.relationshipId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="$target"/>',
-    );
-  }
-
-  buffer.writeln('</Relationships>');
-  return buffer.toString();
-}
+const _documentRelsXml = '''
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/college-of-nursing.png"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/bulacan-state-university.png"/>
+</Relationships>
+''';
 
 const _appPropsXml = '''
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1529,277 +1324,6 @@ List<pw.Widget> _surveyPdfSection(_SurveyExportSection section) {
     ),
     pw.SizedBox(height: 10),
   ];
-}
-
-class _TemplateOverlayItem {
-  const _TemplateOverlayItem.text({
-    required this.value,
-    required this.left,
-    required this.top,
-    required this.width,
-    required this.size,
-    required this.align,
-  }) : height = 0,
-       isCheckMark = false;
-
-  const _TemplateOverlayItem.checkMark({
-    required this.left,
-    required this.top,
-    required this.width,
-    required this.height,
-    required this.size,
-  }) : value = '',
-       align = pw.TextAlign.left,
-       isCheckMark = true;
-
-  final String value;
-  final double left;
-  final double top;
-  final double width;
-  final double height;
-  final double size;
-  final pw.TextAlign align;
-  final bool isCheckMark;
-}
-
-List<_TemplateOverlayItem>? _activeTemplateOverlayRecorder;
-
-Future<Uint8List> _renderDocxTemplatePagePng(
-  HealthSubmission? submission,
-  int pageIndex,
-) async {
-  final templateBytes = await _loadAssetBytes(
-    _templatePdfPageAssets[pageIndex],
-  );
-  final pageImage = img.decodePng(templateBytes);
-  if (pageImage == null) {
-    return templateBytes;
-  }
-
-  if (submission != null) {
-    for (final item in _recordTemplateOverlayItems(submission, pageIndex)) {
-      _drawTemplateOverlayItem(pageImage, item);
-    }
-  }
-
-  return img.encodePng(pageImage);
-}
-
-List<_TemplateOverlayItem> _recordTemplateOverlayItems(
-  HealthSubmission submission,
-  int pageIndex,
-) {
-  final previousRecorder = _activeTemplateOverlayRecorder;
-  final items = <_TemplateOverlayItem>[];
-  _activeTemplateOverlayRecorder = items;
-  try {
-    _templatePdfOverlay(submission, pageIndex);
-  } finally {
-    _activeTemplateOverlayRecorder = previousRecorder;
-  }
-  return items;
-}
-
-void _recordTemplateTextOverlay(
-  String value,
-  double left,
-  double top, {
-  required double width,
-  required double size,
-  required pw.TextAlign align,
-}) {
-  final recorder = _activeTemplateOverlayRecorder;
-  final text = _valueOrBlank(value);
-  if (recorder == null || text.isEmpty) {
-    return;
-  }
-
-  final leftPx = left * _templateImageWidthPx / _templatePdfPageFormat.width;
-  final topPx = top * _templateImageHeightPx / _templatePdfPageFormat.height;
-  final widthPx = width * _templateImageWidthPx / _templatePdfPageFormat.width;
-  if (_isPdfCheckMark(text)) {
-    recorder.add(
-      _TemplateOverlayItem.checkMark(
-        left: leftPx,
-        top: topPx,
-        width: widthPx,
-        height: widthPx,
-        size: size,
-      ),
-    );
-    return;
-  }
-
-  recorder.add(
-    _TemplateOverlayItem.text(
-      value: text,
-      left: leftPx,
-      top: topPx,
-      width: widthPx,
-      size: size,
-      align: align,
-    ),
-  );
-}
-
-void _recordTemplateMarkOverlay(
-  String value,
-  double left,
-  double top, {
-  required double width,
-  required double height,
-  required double size,
-}) {
-  final recorder = _activeTemplateOverlayRecorder;
-  final markValue = _valueOrBlank(value);
-  if (recorder == null || markValue.isEmpty) {
-    return;
-  }
-
-  if (_isPdfCheckMark(markValue)) {
-    recorder.add(
-      _TemplateOverlayItem.checkMark(
-        left: left,
-        top: top,
-        width: width,
-        height: height,
-        size: size,
-      ),
-    );
-    return;
-  }
-
-  recorder.add(
-    _TemplateOverlayItem.text(
-      value: markValue,
-      left: left,
-      top: top,
-      width: width,
-      size: size,
-      align: pw.TextAlign.center,
-    ),
-  );
-}
-
-void _drawTemplateOverlayItem(img.Image pageImage, _TemplateOverlayItem item) {
-  if (item.isCheckMark) {
-    _drawTemplateCheckMark(pageImage, item);
-    return;
-  }
-  _drawTemplateText(pageImage, item);
-}
-
-void _drawTemplateText(img.Image pageImage, _TemplateOverlayItem item) {
-  final font = img.arial14;
-  final sourceHeight = font.lineHeight <= 0 ? 14 : font.lineHeight;
-  final targetHeight =
-      (item.size * _templateImageHeightPx / _templatePdfPageFormat.height)
-          .round()
-          .clamp(6, 18);
-  final scale = targetHeight / sourceHeight;
-  final fittedText = _fitTemplateOverlayText(
-    font,
-    item.value,
-    item.width,
-    scale,
-  );
-  if (fittedText.isEmpty) {
-    return;
-  }
-
-  final textWidth = _bitmapTextWidth(font, fittedText);
-  final textImage = img.Image(
-    width: textWidth <= 0 ? 1 : textWidth,
-    height: sourceHeight,
-    numChannels: 4,
-  );
-  img.fill(textImage, color: img.ColorRgba8(0, 0, 0, 0));
-  img.drawString(
-    textImage,
-    fittedText,
-    font: font,
-    x: 0,
-    y: 0,
-    color: img.ColorRgb8(0, 0, 0),
-  );
-
-  final targetWidth = (textImage.width * scale).round().clamp(
-    1,
-    pageImage.width,
-  );
-  final scaledText = img.copyResize(
-    textImage,
-    width: targetWidth,
-    height: targetHeight,
-    interpolation: img.Interpolation.average,
-  );
-  var x = item.left.round();
-  if (item.align == pw.TextAlign.center) {
-    x = (item.left + (item.width - scaledText.width) / 2).round();
-  } else if (item.align == pw.TextAlign.right) {
-    x = (item.left + item.width - scaledText.width).round();
-  }
-  img.compositeImage(pageImage, scaledText, dstX: x, dstY: item.top.round());
-}
-
-String _fitTemplateOverlayText(
-  img.BitmapFont font,
-  String value,
-  double width,
-  double scale,
-) {
-  var text = value.trim();
-  if (text.isEmpty) {
-    return '';
-  }
-
-  final maxSourceWidth = (width / scale).floor();
-  if (_bitmapTextWidth(font, text) <= maxSourceWidth) {
-    return text;
-  }
-
-  const suffix = '...';
-  while (text.isNotEmpty &&
-      _bitmapTextWidth(font, '$text$suffix') > maxSourceWidth) {
-    text = text.substring(0, text.length - 1).trimRight();
-  }
-  return text.isEmpty ? '' : '$text$suffix';
-}
-
-int _bitmapTextWidth(img.BitmapFont font, String text) {
-  var width = 0;
-  for (final codeUnit in text.codeUnits) {
-    final character = font.characters[codeUnit];
-    width += character?.xAdvance ?? (font.base ~/ 2);
-  }
-  return width;
-}
-
-void _drawTemplateCheckMark(img.Image pageImage, _TemplateOverlayItem item) {
-  final color = img.ColorRgb8(0, 0, 0);
-  final left = item.left.round();
-  final top = item.top.round();
-  final width = item.width.round();
-  final height = item.height.round();
-  final thickness = (item.size / 2).clamp(2, 4);
-  img.drawLine(
-    pageImage,
-    x1: left + (width * 0.16).round(),
-    y1: top + (height * 0.48).round(),
-    x2: left + (width * 0.38).round(),
-    y2: top + (height * 0.22).round(),
-    color: color,
-    thickness: thickness,
-  );
-  img.drawLine(
-    pageImage,
-    x1: left + (width * 0.38).round(),
-    y1: top + (height * 0.22).round(),
-    x2: left + (width * 0.86).round(),
-    y2: top + (height * 0.76).round(),
-    color: color,
-    thickness: thickness,
-  );
 }
 
 List<pw.Widget> _templatePdfOverlay(
@@ -3607,14 +3131,6 @@ pw.Widget _templateText(
   if (_isPdfCheckMark(value)) {
     final markExtent = width < size + 2.2 ? width : size + 2.2;
     final markLeft = left + (width - markExtent) / 2;
-    _recordTemplateTextOverlay(
-      value,
-      markLeft,
-      top,
-      width: markExtent,
-      size: size,
-      align: align,
-    );
     return _templateCheckMark(
       markLeft,
       top,
@@ -3624,14 +3140,6 @@ pw.Widget _templateText(
     );
   }
 
-  _recordTemplateTextOverlay(
-    value,
-    left,
-    top,
-    width: width,
-    size: size,
-    align: align,
-  );
   return pw.Positioned(
     left: left,
     top: top,
@@ -3709,14 +3217,6 @@ pw.Widget _templateMarkPx(
   final markValue = _valueOrBlank(value);
   final markWidth = _templatePxX(markBoxWidth);
   final markHeight = _templatePxY(markBoxHeight);
-  _recordTemplateMarkOverlay(
-    markValue,
-    markLeft,
-    markTop,
-    width: markBoxWidth,
-    height: markBoxHeight,
-    size: size,
-  );
 
   return pw.Positioned(
     left: _templatePxX(markLeft),
