@@ -387,7 +387,8 @@ class AppController extends ChangeNotifier {
     required String attachmentBase64,
   }) async {
     if (!canManageHealthTips) {
-      healthTipsErrorMessage = 'Patient accounts can view health tips only.';
+      healthTipsErrorMessage =
+          'Patient accounts can view health teaching only.';
       notifyListeners();
       return false;
     }
@@ -421,8 +422,8 @@ class AppController extends ChangeNotifier {
         entityType: 'health_tip',
         entityId: savedHealthTip.id,
         summary: previous == null
-            ? 'Created health tip "${savedHealthTip.title}".'
-            : 'Updated health tip "${savedHealthTip.title}".',
+            ? 'Created health teaching "${savedHealthTip.title}".'
+            : 'Updated health teaching "${savedHealthTip.title}".',
       );
       return true;
     } catch (error) {
@@ -436,7 +437,8 @@ class AppController extends ChangeNotifier {
 
   Future<bool> deleteHealthTip(String id) async {
     if (!canManageHealthTips) {
-      healthTipsErrorMessage = 'Patient accounts can view health tips only.';
+      healthTipsErrorMessage =
+          'Patient accounts can view health teaching only.';
       notifyListeners();
       return false;
     }
@@ -456,8 +458,8 @@ class AppController extends ChangeNotifier {
         entityType: 'health_tip',
         entityId: id,
         summary: deleted == null
-            ? 'Deleted health tip.'
-            : 'Deleted health tip "${deleted.title}".',
+            ? 'Deleted health teaching.'
+            : 'Deleted health teaching "${deleted.title}".',
       );
       return true;
     } catch (error) {
@@ -505,11 +507,23 @@ class AppController extends ChangeNotifier {
   Future<void> updateReportSubmission(HealthSubmission submission) async {
     final editedAt = DateTime.now().toUtc();
     final previous = _submissionById(submission.clientSubmissionId);
-    final withHistory = submission.withEditHistory(
-      previous: previous ?? submission,
-      editedAt: editedAt,
-      editedBy: activeEmail,
+    final comparisonBase = previous ?? submission;
+    final contentChanges = reportEditChanges(
+      previous: comparisonBase,
+      next: submission,
     );
+    final historyChanged = !reportEditHistoryEquals(
+      comparisonBase.editHistory,
+      submission.editHistory,
+    );
+    final shouldRecordHistory = contentChanges.isNotEmpty || !historyChanged;
+    final withHistory = shouldRecordHistory
+        ? submission.withEditHistory(
+            previous: comparisonBase,
+            editedAt: editedAt,
+            editedBy: activeEmail,
+          )
+        : submission;
     final updated = withHistory.copyWith(
       syncStatus: submission.syncStatus == SyncStatus.draft
           ? SyncStatus.draft
@@ -565,6 +579,32 @@ class AppController extends ChangeNotifier {
       isAiLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<AiHealthGuidance?> analyzeAndSaveSubmissionGuidance(
+    HealthSubmission submission,
+  ) async {
+    final guidance = await analyzeSubmission(submission);
+    if (guidance == null) {
+      return null;
+    }
+
+    final current =
+        _submissionById(submission.clientSubmissionId) ?? submission;
+    final shouldSync = current.syncStatus != SyncStatus.draft;
+    final updated = current.copyWith(
+      aiGuidance: guidance,
+      syncStatus: shouldSync ? SyncStatus.pending : SyncStatus.draft,
+      updatedAt: DateTime.now().toUtc(),
+      lastError: null,
+    );
+
+    await LocalStore.upsertSubmission(updated);
+    _reloadSubmissions();
+    if (shouldSync) {
+      await syncPending();
+    }
+    return guidance;
   }
 
   Future<void> syncPending() async {
@@ -849,13 +889,13 @@ class AppController extends ChangeNotifier {
         await _logAuditEvent(
           action: 'health_tip.list',
           entityType: 'health_tip',
-          summary: 'Viewed health tips.',
+          summary: 'Viewed health teaching.',
           metadata: {'count': remoteHealthTips.length},
         );
       }
     } catch (error) {
       if (kDebugMode) {
-        debugPrint('Unable to refresh remote health tips: $error');
+        debugPrint('Unable to refresh remote health teaching: $error');
       }
       rethrow;
     }

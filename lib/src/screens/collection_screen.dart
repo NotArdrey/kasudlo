@@ -41,9 +41,8 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
   final _healthProblems = <String>{};
   final _communityConcerns = <String>{};
   final _surveyData = <String, dynamic>{};
-  AiHealthGuidance? _aiGuidance;
 
-  String _vaccinationStatus = 'Complete';
+  String _vaccinationStatus = 'Unknown';
   String _waterSanitation = 'Safe water and sanitary toilet';
   String _nutritionalStatus = 'Normal';
   bool _accountCreateRequested = false;
@@ -99,13 +98,6 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                 currentPart: _currentPart,
                 onPrevious: _goToPreviousPart,
                 onNext: _goToNextPart,
-              ),
-              const SizedBox(height: 16),
-              AiGuidanceCard(
-                guidance: _aiGuidance,
-                isLoading: controller.isAiLoading,
-                errorMessage: controller.aiErrorMessage,
-                onGenerate: _analyzeWithAi,
               ),
               const SizedBox(height: 16),
               if (controller.errorMessage != null)
@@ -177,30 +169,6 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
       _CollectPart.healthIllness => _ChoiceSection(
         title: 'III. Health and Illness Pattern',
         children: [
-          _DropdownField(
-            label: 'Vaccination status',
-            value: _vaccinationStatus,
-            options: vaccinationStatusOptions,
-            onChanged: (value) => setState(() => _vaccinationStatus = value),
-          ),
-          _DropdownField(
-            label: 'Water and sanitation',
-            value: _waterSanitation,
-            options: waterSanitationOptions,
-            onChanged: (value) => setState(() => _waterSanitation = value),
-          ),
-          _DropdownField(
-            label: 'Nutritional status',
-            value: _nutritionalStatus,
-            options: nutritionalStatusOptions,
-            onChanged: (value) => setState(() => _nutritionalStatus = value),
-          ),
-          _CheckboxGroup(
-            title: 'Health problems',
-            options: healthProblemOptions,
-            selected: _healthProblems,
-            onChanged: _toggleHealthProblem,
-          ),
           SurveyFieldList(
             fields: [
               ...lifestylePracticeFields,
@@ -253,14 +221,6 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
       return;
     }
     setState(() => _currentPart = _CollectPart.values[nextIndex]);
-  }
-
-  void _toggleHealthProblem(String option, bool checked) {
-    setState(
-      () => checked
-          ? _healthProblems.add(option)
-          : _healthProblems.remove(option),
-    );
   }
 
   void _toggleCommunityConcern(String option, bool checked) {
@@ -316,9 +276,11 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     final controller = ref.read(appControllerProvider);
     final surveyData = _buildSurveyData();
     final submission = _buildSubmission(controller, surveyData);
+    AiHealthGuidance? guidance;
 
     if (submit) {
       await controller.submit(submission);
+      guidance = await controller.analyzeAndSaveSubmissionGuidance(submission);
     } else {
       await controller.saveDraft(submission);
     }
@@ -327,33 +289,17 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
       return;
     }
     if (submit) {
-      _resetForm();
-    }
-    _showMessage(submit ? 'Record queued for sync.' : 'Draft saved.');
-  }
-
-  Future<void> _analyzeWithAi() async {
-    if (!_profileFieldsAreValid()) {
-      setState(() => _currentPart = _CollectPart.demographic);
-      await Future<void>.delayed(Duration.zero);
-      _formKey.currentState?.validate();
-      if (mounted) {
-        _showMessage('Complete community profile first.');
+      _showMessage('Record queued for sync.');
+      if (guidance != null) {
+        await _showSubmittedGuidance(guidance);
+        if (!mounted) {
+          return;
+        }
       }
-      return;
+      _resetForm();
+    } else {
+      _showMessage('Draft saved.');
     }
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    final controller = ref.read(appControllerProvider);
-    final guidance = await controller.analyzeSubmission(
-      _buildSubmission(controller, _buildSurveyData()),
-    );
-    if (!mounted || guidance == null) {
-      return;
-    }
-    setState(() => _aiGuidance = guidance);
   }
 
   HealthSubmission _buildSubmission(
@@ -361,6 +307,10 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     Map<String, dynamic> surveyData,
   ) {
     final familyRows = _familyRowsForCount();
+    final vaccinationStatus = vaccinationStatusFromSurveyData(
+      surveyData,
+      fallback: _vaccinationStatus,
+    );
 
     return controller.createSubmission(
       respondentName: _nameController.text,
@@ -369,7 +319,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
       familyMembersCount: int.tryParse(_familyCountController.text) ?? 0,
       familyMembers: familyRows.map(FamilyMember.fromSurveyData).toList(),
       healthProblems: _healthProblems.toList()..sort(),
-      vaccinationStatus: _vaccinationStatus,
+      vaccinationStatus: vaccinationStatus,
       waterSanitation: _waterSanitation,
       nutritionalStatus: _nutritionalStatus,
       communityConcerns: _communityConcerns.toList()..sort(),
@@ -394,8 +344,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
       _communityConcerns.clear();
       _surveyData.clear();
       _surveyData['family_members'] = _familyRowsForCount();
-      _aiGuidance = null;
-      _vaccinationStatus = 'Complete';
+      _vaccinationStatus = 'Unknown';
       _waterSanitation = 'Safe water and sanitary toilet';
       _nutritionalStatus = 'Normal';
       _accountCreateRequested = false;
@@ -424,8 +373,22 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
         int.tryParse(_familyCountController.text.trim()) ??
         _familyCountController.text.trim();
     surveyData['family_members'] = familyRows;
+    final incomeEarners = normalizedIncomeEarnerRows(
+      surveyData['income_earners'],
+      keepBlankRows: false,
+    );
+    final incomeEarnerCount = incomeEarnerCountFromRows(incomeEarners);
+    surveyData['income_earners'] = incomeEarners;
+    if (incomeEarnerCount > 0) {
+      surveyData['income_earner_count'] = incomeEarnerCount;
+    } else {
+      surveyData.remove('income_earner_count');
+    }
     surveyData['health_problems'] = healthProblems;
-    surveyData['vaccination_status'] = _vaccinationStatus;
+    surveyData['vaccination_status'] = vaccinationStatusFromSurveyData(
+      surveyData,
+      fallback: _vaccinationStatus,
+    );
     surveyData['water_sanitation'] = _waterSanitation;
     surveyData['nutritional_status'] = _nutritionalStatus;
     surveyData['community_concerns'] = communityConcerns;
@@ -485,6 +448,38 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _showSubmittedGuidance(AiHealthGuidance guidance) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          insetPadding: const EdgeInsets.all(16),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.88,
+              maxWidth: 560,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AiGuidanceCard(guidance: guidance, isLoading: false),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Done'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -759,10 +754,9 @@ class _PersonalInfoSection extends StatelessWidget {
         TextFormField(
           controller: nameController,
           textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(labelText: 'Name'),
-          validator: (value) => value == null || value.trim().isEmpty
-              ? 'Enter respondent name'
-              : null,
+          decoration: const InputDecoration(labelText: 'Informant'),
+          validator: (value) =>
+              value == null || value.trim().isEmpty ? 'Enter informant' : null,
         ),
         TextFormField(
           controller: ageController,
@@ -824,42 +818,6 @@ class _ChoiceSection extends StatelessWidget {
           ],
         ],
       ),
-    );
-  }
-}
-
-class _DropdownField extends StatelessWidget {
-  const _DropdownField({
-    required this.label,
-    required this.value,
-    required this.options,
-    required this.onChanged,
-  });
-
-  final String label;
-  final String value;
-  final List<String> options;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      isExpanded: true,
-      decoration: InputDecoration(labelText: label),
-      items: options
-          .map(
-            (option) => DropdownMenuItem(
-              value: option,
-              child: Text(option, overflow: TextOverflow.ellipsis),
-            ),
-          )
-          .toList(),
-      onChanged: (value) {
-        if (value != null) {
-          onChanged(value);
-        }
-      },
     );
   }
 }
@@ -955,6 +913,7 @@ class _FamilyMemberEditor extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
+        color: Colors.white,
         border: Border.all(color: KasudloColors.border),
         borderRadius: BorderRadius.circular(6),
       ),
@@ -1052,10 +1011,12 @@ class _InlineSurveyExpansionState extends State<_InlineSurveyExpansion> {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: KasudloColors.border),
+    return Material(
+      color: Colors.white,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(6),
+        side: const BorderSide(color: KasudloColors.border),
       ),
       child: ExpansionTile(
         title: Text(widget.title),

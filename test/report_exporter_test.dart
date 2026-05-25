@@ -73,7 +73,7 @@ void main() {
       final pageCount = int.parse(
         RegExp(r'/Count (\d+)').firstMatch(pdfRaw)!.group(1)!,
       );
-      expect(pageCount, greaterThan(6));
+      expect(pageCount, 6);
 
       expect(docs.fileName, endsWith('.docx'));
       expect(File(docs.savedLocation).existsSync(), isTrue);
@@ -85,6 +85,7 @@ void main() {
       );
       expect(documentXml, contains('COMMUNITY SURVEY TOOL'));
       expect(documentXml, contains('<w:drawing>'));
+      expect(documentXml, contains('w:h="18700"'));
       expect(documentXml, contains('Ana Cruz'));
       expect(documentXml, contains('Nico Cruz'));
       expect(documentXml, contains('Barangay 1'));
@@ -97,18 +98,15 @@ void main() {
       expect(documentXml, contains('Religious services, Health Services'));
       expect(documentXml, contains('Family members row 1 - Member name'));
       expect(documentXml, contains('Income earners row 1 - Income PHP'));
-      expect(
-        documentXml,
-        contains('Rabies carrier animals row 1 - Animal kind'),
-      );
+      expect(documentXml, contains('Animals raised row 1 - Kind'));
       expect(documentXml, contains('Dog'));
       expect(
         documentXml,
-        contains('Cigarette smokers row 1 - Age started smoking'),
+        contains('Cigarette smoking details row 1 - Age started smoking'),
       );
       expect(
         documentXml,
-        contains('Anthropometric data, 5 years below row 1 - BMI'),
+        contains('A. Anthropometric Data (5 years below) row 1 - BMI'),
       );
       expect(documentXml, contains('Immunization records row 1 - BCG date'));
       expect(documentXml, contains('2026-01-10'));
@@ -124,6 +122,12 @@ void main() {
       expect(documentXml, contains('Shrimp'));
       expect(documentXml, contains('Bad for health of family, Others'));
       expect(documentXml, contains('Partner concern'));
+      for (var pageIndex = 1; pageIndex <= 6; pageIndex++) {
+        expect(
+          archive.findFile('word/media/survey-1-page-$pageIndex.png'),
+          isNotNull,
+        );
+      }
       expect(archive.findFile('word/media/college-of-nursing.png'), isNotNull);
       expect(
         archive.findFile('word/media/bulacan-state-university.png'),
@@ -136,6 +140,9 @@ void main() {
     final schemaKeys = <String>{};
     void collectSchemaFields(List<SurveyField> fields) {
       for (final field in fields) {
+        if (field.type == SurveyFieldType.heading) {
+          continue;
+        }
         schemaKeys.add(field.key);
         collectSchemaFields(field.fields);
       }
@@ -218,7 +225,13 @@ Map<String, dynamic> _sampleSurveyData() {
     'mode_of_communication_other': 'Messenger group',
     'income_earner_count': 1,
     'income_earners': [
-      {'earner_no': 1, 'family_position': 'Head', 'income_php': 24000},
+      {
+        'earner_no': 1,
+        'family_member_no': 1,
+        'family_member_name': 'Ana Cruz',
+        'family_position': 'Head',
+        'income_php': 24000,
+      },
     ],
     'monthly_family_income_combined': '20,001-25,000',
     'financial_sources': ['Employment', 'Others'],

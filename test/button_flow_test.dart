@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:kasudlo/src/app.dart';
 import 'package:kasudlo/src/models.dart';
 import 'package:kasudlo/src/state/app_controller.dart';
 import 'package:kasudlo/src/widgets/account_request_fields.dart';
+
+final _reportEditedAtUtc = DateTime.utc(2026, 5, 24, 5, 5);
 
 void main() {
   testWidgets('login buttons validate and sign in', (tester) async {
@@ -251,27 +254,27 @@ void main() {
   });
 
   testWidgets(
-    'health tips are editable for workers and view-only for patients',
+    'health teaching is editable for workers and view-only for patients',
     (tester) async {
       final workerController = FakeAppController.withHealthTips();
       await _pumpKasudlo(tester, workerController);
 
-      expect(_navText('Tips'), findsOneWidget);
-      await tester.tap(_navText('Tips'));
+      expect(_navText('Teaching'), findsOneWidget);
+      await tester.tap(_navText('Teaching'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Health Tips'), findsWidgets);
+      expect(find.text('Health Teaching'), findsWidgets);
       expect(find.text('Dengue prevention'), findsOneWidget);
       expect(
-        find.widgetWithText(ElevatedButton, 'Upload Health Tip'),
+        find.widgetWithText(ElevatedButton, 'Upload Health Teaching'),
         findsOneWidget,
       );
-      expect(find.byTooltip('Edit health tip'), findsOneWidget);
-      expect(find.byTooltip('Delete health tip'), findsOneWidget);
+      expect(find.byTooltip('Edit health teaching'), findsOneWidget);
+      expect(find.byTooltip('Delete health teaching'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Edit health tip'));
+      await tester.tap(find.byTooltip('Edit health teaching'));
       await tester.pumpAndSettle();
-      expect(find.text('Edit health tip'), findsOneWidget);
+      expect(find.text('Edit health teaching'), findsOneWidget);
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Title'),
         'Updated dengue prevention',
@@ -282,9 +285,9 @@ void main() {
       expect(workerController.saveHealthTipCalls, 1);
       expect(find.text('Updated dengue prevention'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Delete health tip'));
+      await tester.tap(find.byTooltip('Delete health teaching'));
       await tester.pumpAndSettle();
-      expect(find.text('Delete health tip?'), findsOneWidget);
+      expect(find.text('Delete health teaching?'), findsOneWidget);
       await tester.tap(find.widgetWithText(FilledButton, 'Confirm Delete'));
       await tester.pumpAndSettle();
 
@@ -298,17 +301,17 @@ void main() {
         role: AccountRole.patient,
       );
       await _pumpKasudlo(tester, patientController);
-      await tester.tap(_navText('Tips'));
+      await tester.tap(_navText('Teaching'));
       await tester.pumpAndSettle();
 
       expect(find.text('Dengue prevention'), findsOneWidget);
       expect(
-        find.widgetWithText(ElevatedButton, 'Upload Health Tip'),
+        find.widgetWithText(ElevatedButton, 'Upload Health Teaching'),
         findsNothing,
       );
-      expect(find.byTooltip('Add health tip'), findsNothing);
-      expect(find.byTooltip('Edit health tip'), findsNothing);
-      expect(find.byTooltip('Delete health tip'), findsNothing);
+      expect(find.byTooltip('Add health teaching'), findsNothing);
+      expect(find.byTooltip('Edit health teaching'), findsNothing);
+      expect(find.byTooltip('Delete health teaching'), findsNothing);
     },
   );
 
@@ -353,7 +356,7 @@ void main() {
       await tester.tap(_navText('Collect'));
       await tester.pumpAndSettle();
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Name'),
+        find.widgetWithText(TextFormField, 'Informant'),
         'Ana Cruz',
       );
       await tester.enterText(
@@ -419,6 +422,100 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Ben Cruz'), findsOneWidget);
 
+      await _scrollUntilVisible(tester, find.text('II. Socio-economic'));
+      await tester.tap(find.text('II. Socio-economic'));
+      await tester.pumpAndSettle();
+      expect(find.text('1. SOCIAL INDICATORS'), findsOneWidget);
+
+      await _scrollUntilVisible(
+        tester,
+        find.text('2.1 If practiced, method of disposal'),
+      );
+      expect(
+        find.text('A. REFUSE AND GARBAGE', skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(find.text('1. Storage', skipOffstage: false), findsOneWidget);
+      expect(
+        find.text('2. Waste Segregation', skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(
+        find.text('2.1 If practiced, method of disposal', skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(
+        find.text('2.2 Reason for practicing', skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          '2.3 If not practiced, method of disposal',
+          skipOffstage: false,
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text('2.4 Reason for not practicing', skipOffstage: false),
+        findsOneWidget,
+      );
+
+      await _scrollUntilVisible(
+        tester,
+        find.byKey(
+          const ValueKey(
+            'multi.ii_socio_economic_cultural_and_environmental.services_in_community',
+          ),
+        ),
+      );
+      await tester.tap(
+        find.byKey(
+          const ValueKey(
+            'multi.ii_socio_economic_cultural_and_environmental.services_in_community',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Religious services').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Health Services').last);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.widgetWithText(ElevatedButton, 'Done').hitTestable(),
+      );
+      await tester.pumpAndSettle();
+
+      await _scrollUntilVisible(
+        tester,
+        find.widgetWithText(OutlinedButton, 'Add Income Earner'),
+      );
+      await tester.tap(
+        find.widgetWithText(OutlinedButton, 'Add Income Earner'),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.widgetWithText(DropdownButtonFormField<String>, 'Income earner'),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('1 - Ben Cruz (Son)').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Income PHP'),
+        '24000',
+      );
+      await tester.pumpAndSettle();
+
+      await _scrollUntilVisible(tester, find.text('III. Health & Illness'));
+      await tester.tap(find.text('III. Health & Illness'));
+      await tester.pumpAndSettle();
+      expect(
+        find.widgetWithText(
+          DropdownButtonFormField<String>,
+          'Vaccination status',
+        ),
+        findsNothing,
+      );
+
       await _scrollUntilVisible(
         tester,
         find.widgetWithText(OutlinedButton, 'Save Draft'),
@@ -445,11 +542,23 @@ void main() {
         familyRows.map((row) => (row as Map)['member_no']),
         orderedEquals([1, 2, 3]),
       );
+      expect(controller.submissions.first.surveyData['services_in_community'], [
+        'Health Services',
+        'Religious services',
+      ]);
+      expect(controller.submissions.first.surveyData['income_earner_count'], 1);
+      final incomeRows =
+          controller.submissions.first.surveyData['income_earners'] as List;
+      expect(incomeRows, hasLength(1));
+      expect((incomeRows.first as Map)['family_member_no'], '1');
+      expect((incomeRows.first as Map)['family_member_name'], 'Ben Cruz');
+      expect((incomeRows.first as Map)['family_position'], 'Son');
+      expect((incomeRows.first as Map)['income_php'], '24000');
+      expect(controller.submissions.first.vaccinationStatus, 'Unknown');
       expect(
         controller.submissions.first.surveyData.values,
         isNot(contains('secret1')),
       );
-      expect(find.text('Ben Cruz'), findsOneWidget);
 
       await tester.pump(const Duration(seconds: 4));
       await tester.pumpAndSettle();
@@ -476,6 +585,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(controller.submitCalls, 1);
       expect(find.text('Record queued for sync.'), findsOneWidget);
+      expect(controller.guidanceCalls, 1);
+      expect(find.text('AI health guidance'), findsOneWidget);
+      expect(find.text('Schedule a BP follow-up.'), findsOneWidget);
+      expect(controller.submissions.first.aiGuidance?.riskLevel, 'moderate');
     },
   );
 
@@ -483,6 +596,7 @@ void main() {
     tester,
   ) async {
     final controller = FakeAppController.withReportData();
+    final expectedEditHistoryTime = _testReportDateTime(_reportEditedAtUtc);
     await _pumpKasudlo(tester, controller);
 
     await tester.tap(_navText('Reports'));
@@ -503,6 +617,8 @@ void main() {
     );
     expect(find.text('IV. Health Resource'), findsOneWidget);
     expect(find.text('V. Political/Leadership Patterns'), findsOneWidget);
+    expect(find.text('AI health guidance'), findsOneWidget);
+    expect(find.text('Schedule a BP follow-up.'), findsOneWidget);
     expect(find.text('No rows added yet.'), findsWidgets);
     expect(find.text('May 23, 2026 12:00 AM'), findsOneWidget);
     expect(find.text('No edits recorded yet.'), findsOneWidget);
@@ -516,7 +632,7 @@ void main() {
     expect(find.text('Create account'), findsOneWidget);
 
     await tester.enterText(
-      find.widgetWithText(TextFormField, 'Name'),
+      find.widgetWithText(TextFormField, 'Informant'),
       'Ana Edited',
     );
     await tester.enterText(
@@ -536,16 +652,74 @@ void main() {
     await tester.tap(find.byTooltip('View report record').first);
     await tester.pumpAndSettle();
     expect(find.text('Edit history'), findsOneWidget);
-    expect(find.text('May 24, 2026 1:05 PM'), findsOneWidget);
+    expect(find.text(expectedEditHistoryTime), findsOneWidget);
     expect(find.text('2 fields updated.'), findsOneWidget);
-    expect(find.textContaining('Name changed from Ana Cruz'), findsOneWidget);
+    expect(
+      find.textContaining('Informant changed from Ana Cruz'),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byTooltip('Close').last);
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('Edit report record').first);
     await tester.pumpAndSettle();
-    expect(find.text('May 24, 2026 1:05 PM'), findsOneWidget);
+    expect(find.text(expectedEditHistoryTime), findsOneWidget);
+    await tester.ensureVisible(find.byTooltip('Edit history entry'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Edit history entry'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit history entry'), findsOneWidget);
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Summary'),
+      'Corrected history summary.',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Edited by'),
+      'auditor@test.com',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Save entry'));
+    await tester.pumpAndSettle();
+    expect(find.text('Corrected history summary.'), findsOneWidget);
+    await _tapReportSheetSave(tester);
+    expect(
+      find.text('Save edit history changes for Ana Edited?'),
+      findsOneWidget,
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Save changes'));
+    await tester.pumpAndSettle();
+    expect(controller.updateReportCalls, 2);
+
+    await tester.tap(find.byTooltip('View report record').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Corrected history summary.'), findsOneWidget);
+    expect(find.text('Edited by auditor@test.com'), findsOneWidget);
+    expect(find.text('2 fields updated.'), findsNothing);
+    await tester.tap(find.byTooltip('Close').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Edit report record').first);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byTooltip('Delete history entry'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Delete history entry'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete history entry?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+    expect(find.text('No edits recorded yet.'), findsOneWidget);
+    await _tapReportSheetSave(tester);
+    expect(
+      find.text('Save edit history changes for Ana Edited?'),
+      findsOneWidget,
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Save changes'));
+    await tester.pumpAndSettle();
+    expect(controller.updateReportCalls, 3);
+
+    await tester.tap(find.byTooltip('View report record').first);
+    await tester.pumpAndSettle();
+    expect(find.text('No edits recorded yet.'), findsOneWidget);
     await tester.tap(find.byTooltip('Close').last);
     await tester.pumpAndSettle();
 
@@ -749,6 +923,30 @@ Future<void> _scrollUntilVisible(WidgetTester tester, Finder finder) async {
   await tester.pumpAndSettle();
 }
 
+Future<void> _tapReportSheetSave(WidgetTester tester) async {
+  final saveButton = find.byTooltip('Save report record');
+  for (var attempt = 0; attempt < 8; attempt++) {
+    final visibleSaveButton = saveButton.hitTestable();
+    if (visibleSaveButton.evaluate().isNotEmpty) {
+      await tester.tap(visibleSaveButton.first);
+      await tester.pumpAndSettle();
+      return;
+    }
+
+    final scrollView = find.byType(SingleChildScrollView).hitTestable();
+    if (scrollView.evaluate().isEmpty) {
+      break;
+    }
+    await tester.drag(scrollView.last, const Offset(0, 520));
+    await tester.pumpAndSettle();
+  }
+
+  await tester.ensureVisible(saveButton);
+  await tester.pumpAndSettle();
+  await tester.tap(saveButton.hitTestable().first);
+  await tester.pumpAndSettle();
+}
+
 Future<void> _selectAccountRole(WidgetTester tester, String label) async {
   final segmentedOption = find.descendant(
     of: find.byType(SegmentedButton<AccountRole>),
@@ -919,6 +1117,7 @@ class FakeAppController extends AppController {
         waterSanitation: 'Safe water and sanitary toilet',
         nutritionalStatus: 'Normal',
         communityConcerns: const ['Dengue risk'],
+        aiGuidance: _sampleAiGuidance(),
       ),
       _submission(
         'pending',
@@ -975,6 +1174,7 @@ class FakeAppController extends AppController {
   int saveHealthTipCalls = 0;
   int deleteHealthTipCalls = 0;
   int syncCalls = 0;
+  int guidanceCalls = 0;
   int preferenceUpdateCalls = 0;
   String? requestedResetEmail;
   String? completedPassword;
@@ -1090,6 +1290,22 @@ class FakeAppController extends AppController {
   }
 
   @override
+  Future<AiHealthGuidance?> analyzeAndSaveSubmissionGuidance(
+    HealthSubmission submission,
+  ) async {
+    guidanceCalls++;
+    final guidance = _sampleAiGuidance();
+    submissions = [
+      for (final existing in submissions)
+        existing.clientSubmissionId == submission.clientSubmissionId
+            ? existing.copyWith(aiGuidance: guidance)
+            : existing,
+    ];
+    notifyListeners();
+    return guidance;
+  }
+
+  @override
   Future<void> updateReportSubmission(HealthSubmission submission) async {
     updateReportCalls++;
     final previous = submissions.firstWhere(
@@ -1097,11 +1313,22 @@ class FakeAppController extends AppController {
           existing.clientSubmissionId == submission.clientSubmissionId,
       orElse: () => submission,
     );
-    final withHistory = submission.withEditHistory(
+    final contentChanges = reportEditChanges(
       previous: previous,
-      editedAt: DateTime(2026, 5, 24, 13, 5),
-      editedBy: activeEmail,
+      next: submission,
     );
+    final historyChanged = !reportEditHistoryEquals(
+      previous.editHistory,
+      submission.editHistory,
+    );
+    final shouldRecordHistory = contentChanges.isNotEmpty || !historyChanged;
+    final withHistory = shouldRecordHistory
+        ? submission.withEditHistory(
+            previous: previous,
+            editedAt: _reportEditedAtUtc,
+            editedBy: activeEmail,
+          )
+        : submission;
     submissions = [
       for (final existing in submissions)
         if (existing.clientSubmissionId == submission.clientSubmissionId)
@@ -1191,6 +1418,7 @@ HealthSubmission _submission(
   String waterSanitation = 'Safe water and sanitary toilet',
   String nutritionalStatus = 'Normal',
   List<String> communityConcerns = const ['Dengue risk'],
+  AiHealthGuidance? aiGuidance,
 }) {
   return HealthSubmission(
     clientSubmissionId: id,
@@ -1208,5 +1436,23 @@ HealthSubmission _submission(
     notes: '',
     createdAt: DateTime(2026, 5, 23),
     syncStatus: status,
+    aiGuidance: aiGuidance,
   );
+}
+
+AiHealthGuidance _sampleAiGuidance() {
+  return const AiHealthGuidance(
+    riskLevel: 'moderate',
+    summary: 'Schedule a BP follow-up.',
+    concerningFindings: ['Hypertension risk'],
+    recommendedActions: ['Recheck blood pressure within one week'],
+    followUpQuestions: ['Any dizziness or chest pain?'],
+    careSuggestions: [],
+    emergencyWarning: '',
+    disclaimer: 'AI guidance supports field triage.',
+  );
+}
+
+String _testReportDateTime(DateTime value) {
+  return DateFormat('MMM d, yyyy h:mm a').format(value.toLocal());
 }

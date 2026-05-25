@@ -25,11 +25,11 @@ class HealthTipsScreen extends ConsumerWidget {
     final healthTips = controller.healthTips;
 
     return AppPage(
-      title: 'Health Tips',
+      title: 'Health Teaching',
       subtitle: canManage ? 'Upload guidance and files' : 'Care guidance',
       actions: [
         IconButton(
-          tooltip: 'Refresh health tips',
+          tooltip: 'Refresh health teaching',
           onPressed: controller.isHealthTipsLoading
               ? null
               : () => ref.read(appControllerProvider).loadHealthTips(),
@@ -37,7 +37,7 @@ class HealthTipsScreen extends ConsumerWidget {
         ),
         if (canManage)
           IconButton(
-            tooltip: 'Add health tip',
+            tooltip: 'Add health teaching',
             onPressed: controller.isHealthTipActionBusy
                 ? null
                 : () => _openEditor(context, null),
@@ -61,14 +61,14 @@ class HealthTipsScreen extends ConsumerWidget {
                   ? null
                   : () => _openEditor(context, null),
               icon: const Icon(Icons.upload_file),
-              label: const Text('Upload Health Tip'),
+              label: const Text('Upload Health Teaching'),
             ),
           ),
         if (healthTips.isEmpty)
           const EmptyState(
             icon: Icons.tips_and_updates_outlined,
-            title: 'No health tips yet',
-            message: 'Health tips from the care team will appear here.',
+            title: 'No health teaching yet',
+            message: 'Health teaching from the care team will appear here.',
           )
         else
           for (final healthTip in healthTips)
@@ -95,7 +95,9 @@ class HealthTipsScreen extends ConsumerWidget {
         ..showSnackBar(
           SnackBar(
             content: Text(
-              healthTip == null ? 'Health tip uploaded.' : 'Health tip saved.',
+              healthTip == null
+                  ? 'Health teaching uploaded.'
+                  : 'Health teaching saved.',
             ),
           ),
         );
@@ -110,7 +112,7 @@ class HealthTipsScreen extends ConsumerWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete health tip?'),
+        title: const Text('Delete health teaching?'),
         content: Text(healthTip.title),
         actions: [
           TextButton(
@@ -136,7 +138,7 @@ class HealthTipsScreen extends ConsumerWidget {
     }
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('Health tip deleted.')));
+      ..showSnackBar(const SnackBar(content: Text('Health teaching deleted.')));
   }
 
   Future<void> _downloadAttachment(
@@ -214,7 +216,7 @@ class _HealthTipEditorDialogState
     final editing = widget.initialHealthTip != null;
 
     return AlertDialog(
-      title: Text(editing ? 'Edit health tip' : 'Upload health tip'),
+      title: Text(editing ? 'Edit health teaching' : 'Upload health teaching'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
         child: SingleChildScrollView(
@@ -519,12 +521,12 @@ class _HealthTipCard extends StatelessWidget {
               ),
               if (canManage) ...[
                 IconButton(
-                  tooltip: 'Edit health tip',
+                  tooltip: 'Edit health teaching',
                   onPressed: onEdit,
                   icon: const Icon(Icons.edit_outlined),
                 ),
                 IconButton(
-                  tooltip: 'Delete health tip',
+                  tooltip: 'Delete health teaching',
                   onPressed: onDelete,
                   icon: const Icon(Icons.delete_outline),
                 ),

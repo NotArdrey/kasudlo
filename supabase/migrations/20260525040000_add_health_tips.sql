@@ -46,7 +46,7 @@ alter table public.health_tips
   add column if not exists updated_at timestamptz not null default timezone('utc', now());
 
 update public.health_tips
-set title = 'Untitled health tip'
+set title = 'Untitled health teaching'
 where length(btrim(title)) = 0;
 
 do $$

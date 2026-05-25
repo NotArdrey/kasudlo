@@ -52,6 +52,43 @@ void main() {
     );
   });
 
+  test('HealthSubmission RPC payload uses survey family member keys', () {
+    final submission = HealthSubmission(
+      clientSubmissionId: 'family-key-check',
+      respondentName: 'Ana',
+      respondentAge: 34,
+      address: 'Barangay 1',
+      familyMembersCount: 1,
+      familyMembers: const [
+        FamilyMember(
+          name: 'Ben Cruz',
+          age: 12,
+          relationship: 'Son',
+          healthProblems: [],
+          vaccinationStatus: '',
+          nutritionalStatus: '',
+        ),
+      ],
+      healthProblems: const [],
+      vaccinationStatus: 'Unknown',
+      waterSanitation: 'Safe water and sanitary toilet',
+      nutritionalStatus: 'Normal',
+      communityConcerns: const [],
+      consentGiven: true,
+      notes: '',
+      createdAt: DateTime(2026, 5, 24),
+      syncStatus: SyncStatus.pending,
+    );
+
+    final familyMembers = submission.toRpcPayload()['family_members'] as List;
+    final member = familyMembers.single as Map<String, dynamic>;
+
+    expect(member, containsPair('name_of_family_member', 'Ben Cruz'));
+    expect(member, containsPair('relationship_to_head', 'Son'));
+    expect(member, isNot(contains('name')));
+    expect(member, isNot(contains('relationship')));
+  });
+
   test('AppPreferences round trips saved settings', () {
     final preferences = const AppPreferences().copyWith(
       fieldRemindersEnabled: false,
@@ -129,7 +166,7 @@ void main() {
     expect(edited.editHistory.first.summary, '2 fields updated.');
     expect(
       edited.editHistory.first.changes,
-      contains('Name changed from Ana to Ana Edited.'),
+      contains('Informant changed from Ana to Ana Edited.'),
     );
 
     final restored = HealthSubmission.fromJson(edited.toJson());

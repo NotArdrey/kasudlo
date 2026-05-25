@@ -9,6 +9,7 @@ enum SurveyFieldType {
   boolean,
   repeatableTable,
   note,
+  heading,
 }
 
 class SurveyVisibility {
@@ -180,6 +181,103 @@ SurveyField noteField(
   visibleWhen: visibleWhen,
 );
 
+SurveyField headingField(
+  String key,
+  String label, {
+  SurveyVisibility? visibleWhen,
+}) => SurveyField(
+  key: key,
+  label: label,
+  type: SurveyFieldType.heading,
+  visibleWhen: visibleWhen,
+);
+
+List<Map<String, dynamic>> surveyMapRows(Object? value) {
+  if (value is List) {
+    return value
+        .whereType<Map>()
+        .map((row) => Map<String, dynamic>.from(row))
+        .toList();
+  }
+  return const [];
+}
+
+List<Map<String, dynamic>> normalizedIncomeEarnerRows(
+  Object? value, {
+  bool keepBlankRows = true,
+}) {
+  final rows = keepBlankRows
+      ? surveyMapRows(value)
+      : surveyMapRows(value).where(_hasIncomeEarnerContent).toList();
+  return [
+    for (var index = 0; index < rows.length; index++)
+      {...rows[index], 'earner_no': index + 1},
+  ];
+}
+
+int incomeEarnerCountFromRows(Object? value) {
+  return surveyMapRows(value).where(_hasIncomeEarnerContent).length;
+}
+
+String vaccinationStatusFromSurveyData(
+  Map<String, dynamic> data, {
+  String fallback = 'Unknown',
+}) {
+  final rows = surveyMapRows(data['immunization_records']);
+  if (rows.isEmpty) {
+    return fallback.trim().isEmpty ? 'Unknown' : fallback;
+  }
+
+  final hasIncomplete = rows.any(
+    (row) => _truthy(row['incomplete_according_to_age']),
+  );
+  if (hasIncomplete) {
+    return 'Incomplete';
+  }
+
+  final hasComplete = rows.any(
+    (row) =>
+        _truthy(row['complete_according_to_age']) ||
+        _truthy(row['fully_immunized_child']),
+  );
+  if (hasComplete) {
+    return 'Complete';
+  }
+
+  return fallback.trim().isEmpty ? 'Unknown' : fallback;
+}
+
+bool _hasIncomeEarnerContent(Map<String, dynamic> row) {
+  return _hasSurveyValue(row['family_member_no']) ||
+      _hasSurveyValue(row['family_member_name']) ||
+      _hasSurveyValue(row['family_position']) ||
+      _hasSurveyValue(row['income_php']);
+}
+
+bool _hasSurveyValue(Object? value) {
+  if (value == null) {
+    return false;
+  }
+  if (value is String) {
+    return value.trim().isNotEmpty;
+  }
+  if (value is List) {
+    return value.isNotEmpty;
+  }
+  if (value is Map) {
+    return value.isNotEmpty;
+  }
+  return true;
+}
+
+bool _truthy(Object? value) {
+  if (value is bool) {
+    return value;
+  }
+  final normalized = '${value ?? ''}'.trim().toLowerCase();
+  return normalized == 'true' || normalized == 'yes' || normalized == '1';
+}
+
 const yesNoOptions = ['Yes', 'No'];
 const adequateOptions = ['Adequate', 'Inadequate'];
 const cleanDirtyOptions = ['Generally clean', 'Dirty'];
@@ -223,7 +321,7 @@ final surveyHeaderFields = [
   dateField('first_visit_date', '1st visit date'),
   dateField('second_visit_date', '2nd visit date'),
   dateField('third_visit_date', '3rd visit date'),
-  textField('informant', 'Name'),
+  textField('informant', 'Informant'),
   textField('surveyed_by', 'Surveyed by'),
   timeField('time_started', 'Time started'),
   timeField('time_finished', 'Time finished'),
@@ -326,6 +424,7 @@ final familyMemberFields = [
 ];
 
 final familyProfileFields = [
+  headingField('family_type_heading', 'a. Type of Family'),
   multiSelectField('family_composition_type', 'Family composition type', [
     'Nuclear',
     'Extended',
@@ -357,6 +456,7 @@ final familyProfileFields = [
 ];
 
 final socialIndicatorFields = [
+  headingField('social_indicators_heading', '1. Social Indicators'),
   multiSelectField('services_in_community', 'Services in the community', [
     'Religious services',
     'Livelihood Services',
@@ -438,12 +538,14 @@ final socialIndicatorFields = [
 ];
 
 final economicIndicatorFields = [
-  numberField('income_earner_count', 'Income earner count'),
+  headingField('economic_indicator_heading', '2. Economic Indicator'),
   tableField(
     'income_earners',
     'Income earners',
     [
       numberField('earner_no', 'No.'),
+      numberField('family_member_no', 'Family member no.'),
+      textField('family_member_name', 'Family member'),
       textField('family_position', 'Family position'),
       numberField('income_php', 'Income PHP'),
     ],
@@ -492,6 +594,7 @@ final economicIndicatorFields = [
 ];
 
 final culturalIndicatorFields = [
+  headingField('cultural_indicator_heading', '3. Cultural Indicator'),
   multiSelectField(
     'cultural_orientation_illness',
     'Cultural orientation regarding illness',
@@ -538,6 +641,8 @@ final culturalIndicatorFields = [
 ];
 
 final environmentalIndicatorFields = [
+  headingField('environmental_indicator_heading', '4. Environmental Indicator'),
+  headingField('home_heading', 'A. Home'),
   selectField('home_ownership', 'Home ownership', [
     'Owned',
     'Rented',
@@ -577,6 +682,7 @@ final environmentalIndicatorFields = [
     'General sanitary condition',
     cleanDirtyOptions,
   ),
+  headingField('water_supply_heading', 'B. Water Supply'),
   selectField('water_supply_ownership', 'Water supply ownership', [
     'Private',
     'Public',
@@ -642,6 +748,10 @@ final environmentalIndicatorFields = [
     'water_source_distance_from_house',
     'Water source distance from house',
   ),
+  headingField(
+    'food_storage_cooking_heading',
+    'C. Food Storage / Cooking Facilities',
+  ),
   selectField('food_storage_cover_status', 'Food storage cover status', [
     'Covered',
     'Uncovered',
@@ -668,14 +778,16 @@ final environmentalIndicatorFields = [
     'Cooking area sanitary condition',
     cleanDirtyOptions,
   ),
-  selectField('garbage_storage', 'Garbage storage', ['Container', 'None']),
-  selectField('waste_segregation', 'Waste segregation', [
+  headingField('waste_disposal_heading', 'D. Waste Disposal'),
+  headingField('refuse_garbage_heading', 'a. Refuse and Garbage'),
+  selectField('garbage_storage', '1. Storage', ['Container', 'None']),
+  selectField('waste_segregation', '2. Waste Segregation', [
     'Practiced',
     'Not Practiced',
   ]),
   multiSelectField(
     'waste_disposal_method_if_practiced',
-    'Waste disposal method if practiced',
+    '2.1 If practiced, method of disposal',
     [
       'Hog-feeding',
       'Open dumping',
@@ -684,24 +796,16 @@ final environmentalIndicatorFields = [
       'Composting',
       'Open burning',
     ],
-    visibleWhen: const SurveyVisibility.equals(
-      'waste_segregation',
-      'Practiced',
-    ),
   ),
   multiSelectField(
     'reason_for_practicing_waste_segregation',
-    'Reason for practicing waste segregation',
+    '2.2 Reason for practicing',
     [
       'Environmentally friendly',
       'Barangay ordinance which is strictly monitored',
       'Use for business',
       'Others',
     ],
-    visibleWhen: const SurveyVisibility.equals(
-      'waste_segregation',
-      'Practiced',
-    ),
   ),
   textField(
     'reason_for_practicing_waste_segregation_other',
@@ -713,7 +817,7 @@ final environmentalIndicatorFields = [
   ),
   multiSelectField(
     'waste_disposal_method_if_not_practiced',
-    'Waste disposal method if not practiced',
+    '2.3 If not practiced, method of disposal',
     [
       'Hog-feeding',
       'Open dumping',
@@ -722,24 +826,16 @@ final environmentalIndicatorFields = [
       'Composting',
       'Open burning',
     ],
-    visibleWhen: const SurveyVisibility.equals(
-      'waste_segregation',
-      'Not Practiced',
-    ),
   ),
   multiSelectField(
     'reason_for_not_practicing_waste_segregation',
-    'Reason for not practicing waste segregation',
+    '2.4 Reason for not practicing',
     [
       'Not aware of effects',
       'No time to do it',
       'Long-time practice of family',
       'No barangay/municipality ordinance',
     ],
-    visibleWhen: const SurveyVisibility.equals(
-      'waste_segregation',
-      'Not Practiced',
-    ),
   ),
   selectField('toilet_ownership', 'Toilet ownership', [
     'Owned',
@@ -779,155 +875,151 @@ final environmentalIndicatorFields = [
     'Flowing',
     'Stagnant',
   ]),
+  headingField(
+    'rabies_carrier_animals_heading',
+    'E. Presence of Animals that are Rabies carriers',
+  ),
   selectField(
     'has_rabies_carrier_animals',
     'Presence of rabies carrier animals',
     yesNoOptions,
   ),
-  tableField(
-    'rabies_carrier_animals',
-    'Rabies carrier animals',
+  headingField('rabies_animals_raised_heading', 'a. If yes, animals raised'),
+  tableField('rabies_carrier_animals', 'Animals raised', [
+    textField('animal_kind', 'Kind'),
+    numberField('animal_number', 'Number'),
+    booleanField('kept_inside_yard', 'Kept where: Inside the Yard'),
+    booleanField('kept_free_outside', 'Kept where: Free Outside'),
+    booleanField('with_regular_vaccination', 'With regular vaccination'),
+    booleanField('without_vaccination', 'Without vaccination'),
+  ], addButtonLabel: 'Add Animal'),
+  multiSelectField(
+    'vector_control_measures',
+    'b. Practices measures done to control insects/vectors of diseases',
     [
-      textField('animal_kind', 'Animal kind'),
-      numberField('animal_number', 'Number'),
-      booleanField('kept_inside_yard', 'Kept inside yard'),
-      booleanField('kept_free_outside', 'Kept free outside'),
-      booleanField('with_regular_vaccination', 'With regular vaccination'),
-      booleanField('without_vaccination', 'Without vaccination'),
+      'Fumigation',
+      'Insecticides',
+      'Setting traps',
+      'Cleaning the yard',
+      'None',
     ],
-    visibleWhen: const SurveyVisibility.equals(
-      'has_rabies_carrier_animals',
-      'Yes',
-    ),
-    addButtonLabel: 'Add Animal',
   ),
-  multiSelectField('vector_control_measures', 'Control of insects/vectors', [
-    'Fumigation',
-    'Insecticides',
-    'Setting traps',
-    'Cleaning the yard',
-    'None',
-  ]),
   selectField(
     'has_breeding_sites_observed',
-    'Breeding sites observed',
+    'c. Presence of breeding sites (for observation)',
     yesNoOptions,
   ),
   selectField(
     'housing_congestion_observed',
-    'Housing congestion observed',
+    'F. Housing Congestion (for observation)',
     yesNoOptions,
   ),
   selectField(
     'has_industrial_establishment_or_factory_observed',
-    'Industrial establishment/factory observed',
+    'G. Presence of Industrial establishment/factory/ies (for observation)',
     yesNoOptions,
   ),
 ];
 
 final lifestylePracticeFields = [
+  headingField('lifestyle_practices_heading', '1. Lifestyle Practices'),
+  headingField('safety_precaution_heading', 'A. Use of Safety Precaution'),
   selectField(
     'uses_safety_devices_when_necessary',
-    'Uses safety devices when necessary',
+    '1. Use safety devices when necessary e.g. Helmet, safety belts',
     ['Practice', 'Not Practiced'],
   ),
   selectField(
     'has_cigarette_smoker_in_family',
-    'Cigarette smoker in family',
+    'B. Is there a member of the family who is a cigarette smoker?',
     yesNoOptions,
   ),
   textField(
     'smoking_frequency_sticks_or_packs_per_day',
-    'Smoking frequency, sticks or packs per day',
-    visibleWhen: const SurveyVisibility.equals(
-      'has_cigarette_smoker_in_family',
-      'Yes',
-    ),
+    'Frequency/sticks or packs per day',
   ),
-  tableField(
-    'cigarette_smokers',
-    'Cigarette smokers',
-    [
-      textField('name', 'Name'),
-      numberField('age', 'Age'),
-      numberField('age_started_smoking', 'Age started smoking'),
-      textField('reason', 'Reason'),
-    ],
-    visibleWhen: const SurveyVisibility.equals(
-      'has_cigarette_smoker_in_family',
-      'Yes',
-    ),
-    addButtonLabel: 'Add Smoker',
-  ),
+  tableField('cigarette_smokers', 'Cigarette smoking details', [
+    textField('name', 'Name'),
+    numberField('age', 'Age'),
+    numberField('age_started_smoking', 'Age started smoking'),
+    textField('reason', 'Reason'),
+  ], addButtonLabel: 'Add Smoker'),
   selectField(
     'uses_prohibited_or_dangerous_drugs',
-    'Uses prohibited/dangerous drugs',
+    'C. Use of prohibited / dangerous drugs',
     yesNoOptions,
   ),
-  textField(
-    'types_of_drugs',
-    'Types of drugs',
-    visibleWhen: const SurveyVisibility.equals(
-      'uses_prohibited_or_dangerous_drugs',
-      'Yes',
-    ),
-  ),
+  textField('types_of_drugs', 'Types of drugs'),
   tableField(
     'drug_users',
-    'Drug users',
+    'Prohibited / dangerous drug use details',
     [
       textField('name', 'Name'),
       numberField('age', 'Age'),
       numberField('age_started_using_drugs', 'Age started using drugs'),
       textField('reason', 'Reason'),
     ],
-    visibleWhen: const SurveyVisibility.equals(
-      'uses_prohibited_or_dangerous_drugs',
-      'Yes',
-    ),
     addButtonLabel: 'Add Drug User',
   ),
-  tableField('alcohol_drinkers', 'Alcohol drinkers', [
-    textField('name', 'Name'),
-    numberField('age', 'Age'),
-    numberField('age_started_drinking_alcohol', 'Age started drinking alcohol'),
-    textField('frequency', 'Frequency'),
-    textField('reason', 'Reason'),
-  ], addButtonLabel: 'Add Drinker'),
+  tableField(
+    'alcohol_drinkers',
+    'D. Drinks alcoholic beverages',
+    [
+      textField('name', 'Name'),
+      numberField('age', 'Age'),
+      numberField(
+        'age_started_drinking_alcohol',
+        'Age started drinking alcohol',
+      ),
+      textField('frequency', 'Frequency'),
+      textField('reason', 'Reason'),
+    ],
+    addButtonLabel: 'Add Drinker',
+  ),
 ];
 
 final nutritionalStatusFields = [
+  headingField('nutritional_status_heading', '2. Nutritional Status'),
   tableField(
     'anthropometric_data_under_5',
-    'Anthropometric data, 5 years below',
+    'A. Anthropometric Data (5 years below)',
     [
       textField('name', 'Name'),
-      numberField('age_in_months', 'Age in months'),
-      numberField('weight_kg', 'Weight kg'),
-      numberField('height_m', 'Height m'),
-      numberField('bmi', 'BMI'),
-      textField('bmi_remarks', 'BMI remarks'),
-      numberField('waist_circumference_cm', 'Waist circumference cm'),
-      numberField('hip_circumference_cm', 'Hip circumference cm'),
-      numberField('waist_hip_ratio', 'Waist-hip ratio'),
-      textField('waist_hip_ratio_remarks', 'Waist-hip ratio remarks'),
-      numberField('mid_upper_arm_circumference', 'Mid-upper arm circumference'),
-      textField('mid_upper_arm_remarks', 'Mid-upper arm remarks'),
+      numberField('age_in_months', 'Age in mos.'),
+      numberField('weight_kg', 'Wt. in kg.'),
+      numberField('height_m', 'Ht. in m'),
+      numberField('bmi', 'BMI (Wt. in kg / Ht. in m2)'),
+      textField('bmi_remarks', 'Remarks'),
+      numberField('waist_circumference_cm', 'Waist Circumference (WC) in cm.'),
+      numberField('hip_circumference_cm', 'Hips Circumference (HC) in cm.'),
+      numberField('waist_hip_ratio', 'Waist Hips Ratio (WC/HC)'),
+      textField('waist_hip_ratio_remarks', 'Remarks'),
+      numberField('mid_upper_arm_circumference', 'Mid Upper Arm Circular'),
+      textField('mid_upper_arm_remarks', 'Remarks'),
     ],
     addButtonLabel: 'Add Child',
   ),
-  tableField('food_recall_24_hour', '24-hour food recall', [
-    dateField('date', 'Date'),
-    selectField('time_of_day', 'Time of day', [
-      'Breakfast',
-      'Snack',
-      'Lunch',
-      'Dinner',
-      'Midnight snack',
-    ]),
-    textareaField('food_taken', 'Food taken'),
-  ], addButtonLabel: 'Add Food Recall'),
-  selectField('first_food_choice', 'First food choice', [
+  tableField(
+    'food_recall_24_hour',
+    'B. Dietary History: 24-Hour Food Recall',
+    [
+      dateField('date', 'Date'),
+      selectField('time_of_day', 'Time of day', [
+        'Breakfast',
+        'Snack',
+        'Lunch',
+        'Dinner',
+        'Midnight snack',
+      ]),
+      textareaField('food_taken', 'Food taken'),
+    ],
+    addButtonLabel: 'Add Food Recall',
+  ),
+  headingField(
+    'food_usually_most_taken_heading',
+    'C. Food usually/most taken (General)',
+  ),
+  selectField('first_food_choice', 'a. First food choice', [
     'Meat only',
     'Fish',
     'Vegetable',
@@ -939,12 +1031,12 @@ final nutritionalStatusFields = [
     'Other first food choice',
     visibleWhen: const SurveyVisibility.equals('first_food_choice', 'Others'),
   ),
-  selectField('first_food_choice_servings', 'First food choice servings', [
+  selectField('first_food_choice_servings', 'b. Number of servings', [
     '1',
     '2-3',
     '4-5 and above',
   ]),
-  selectField('second_food_choice', 'Second food choice', [
+  selectField('second_food_choice', 'c. Second choice', [
     'Meat',
     'Fish',
     'Vegetable',
@@ -956,12 +1048,12 @@ final nutritionalStatusFields = [
     'Other second food choice',
     visibleWhen: const SurveyVisibility.equals('second_food_choice', 'Others'),
   ),
-  selectField('second_food_choice_servings', 'Second food choice servings', [
+  selectField('second_food_choice_servings', 'd. Number of servings', [
     '1',
     '2-3',
     '4-5 and above',
   ]),
-  multiSelectField('reason_for_food_choices', 'Reason for food choices', [
+  multiSelectField('reason_for_food_choices', 'D. Reason for choices', [
     'It is healthy',
     'Own preference',
     'Affordable',
@@ -970,7 +1062,7 @@ final nutritionalStatusFields = [
   ]),
   multiSelectField(
     'reason_for_not_choosing_other_food_options',
-    'Reason for not choosing other food options',
+    'E. Reason for not choosing other options',
     [
       'Not healthy',
       'Own preference',
@@ -981,7 +1073,7 @@ final nutritionalStatusFields = [
   ),
   selectField(
     'food_intake_frequency',
-    'Food intake frequency',
+    'F. From the above response, how frequent is the intake?',
     foodFrequencyOptions,
   ),
   textField(
@@ -992,13 +1084,14 @@ final nutritionalStatusFields = [
       'Others',
     ),
   ),
-  selectField('food_prepared_for_mealtime', 'Food prepared for mealtime', [
-    'Prepared at home',
-    'Bought outside',
-  ]),
+  selectField(
+    'food_prepared_for_mealtime',
+    'G. How is food prepared for mealtime?',
+    ['Prepared at home', 'Bought outside'],
+  ),
   selectField(
     'food_preparation_frequency',
-    'Food preparation frequency',
+    'H. How often?',
     foodFrequencyOptions,
   ),
   textField(
@@ -1011,25 +1104,17 @@ final nutritionalStatusFields = [
   ),
   multiSelectField(
     'bought_food_source',
-    'Bought outside source',
+    'I. If bought outside, is it from the',
     [
       'Restaurant/Fast food',
       'Carinderia',
       'Food cart, e.g. fried chicken sa kanto, provent, calamares',
     ],
-    visibleWhen: const SurveyVisibility.equals(
-      'food_prepared_for_mealtime',
-      'Bought outside',
-    ),
   ),
   multiSelectField(
     'reason_for_bought_food_option',
-    'Reason for bought food option',
+    'J. Reason for the above option',
     ['Convenient', 'Cheaper', 'Healthy', 'Variety of choices', 'Others'],
-    visibleWhen: const SurveyVisibility.equals(
-      'food_prepared_for_mealtime',
-      'Bought outside',
-    ),
   ),
   textField(
     'reason_for_bought_food_option_other',
@@ -1041,25 +1126,30 @@ final nutritionalStatusFields = [
   ),
   selectField(
     'canned_preserved_food_frequency',
-    'Canned/preserved food intake',
+    'K. Takes/eat canned/preserved food',
     preservedFoodFrequencyOptions,
   ),
   selectField(
     'grilled_food_frequency',
-    'Grilled foods intake',
+    'L. Takes/eat grilled foods',
     preservedFoodFrequencyOptions,
   ),
-  selectField('carbonated_beverage_frequency', 'Carbonated beverages intake', [
-    'Everyday',
-    'Every other day',
-    'Every week',
-    'Occasionally',
-    'Sometimes',
-    'Never',
-  ]),
+  selectField(
+    'carbonated_beverage_frequency',
+    'M. Drinks carbonated beverages',
+    [
+      'Everyday',
+      'Every other day',
+      'Every week',
+      'Occasionally',
+      'Sometimes',
+      'Never',
+    ],
+  ),
 ];
 
 final beliefsPracticeFields = [
+  headingField('beliefs_practices_heading', '3. Beliefs and Practices'),
   multiSelectField(
     'personnel_consulted_during_illness',
     'Personnel consulted during illness',
@@ -1110,6 +1200,10 @@ final beliefsPracticeFields = [
 ];
 
 final communityHealthProgramFields = [
+  headingField(
+    'community_health_programs_heading',
+    '4. Community Health Programs',
+  ),
   textareaField(
     'barangay_health_center_services_available',
     'Available health services at barangay health center',
@@ -1215,42 +1309,45 @@ final communityHealthProgramFields = [
       'Others',
     ),
   ),
+  headingField('modern_methods_used_heading', '2. Modern Methods Used'),
+  headingField('permanent_method_heading', 'A. Permanent method Like'),
   booleanField(
     'permanent_method_female_sterilization_btl',
-    'Permanent method: female sterilization/BTL',
+    'Female sterilization / Bilateral Tubal Ligation',
   ),
   booleanField(
     'permanent_method_male_sterilization_vasectomy',
-    'Permanent method: male sterilization/vasectomy',
+    'Male sterilization / Vasectomy',
   ),
-  booleanField('supply_method_pills', 'Supply method: pills'),
-  booleanField('supply_method_iud', 'Supply method: IUD'),
-  booleanField('supply_method_injectable', 'Supply method: injectable'),
-  booleanField('supply_method_condoms', 'Supply method: condoms'),
-  booleanField('supply_method_implant', 'Supply method: implant'),
+  headingField('temporary_method_heading', 'B. Temporary method'),
+  headingField('supply_methods_heading', 'a. Supply Methods Like'),
+  booleanField('supply_method_pills', 'Pills'),
+  booleanField('supply_method_iud', 'IUD'),
+  booleanField('supply_method_injectable', 'Injectable'),
+  booleanField('supply_method_condoms', 'Condoms'),
+  booleanField('supply_method_implant', 'Implant'),
+  headingField(
+    'fertility_awareness_based_method_heading',
+    'b. Fertility Awareness-Based Method Like',
+  ),
   booleanField(
     'fertility_method_cervical_mucus_billings',
-    'Fertility method: cervical mucus/Billings',
+    'Cervical Mucus Method / Billings Ovulation Method',
   ),
   booleanField(
     'fertility_method_basal_body_temperature',
-    'Fertility method: basal body temperature',
+    'Basal Body Temperature (BBT)',
   ),
-  booleanField(
-    'fertility_method_sympto_thermal',
-    'Fertility method: sympto-thermal',
-  ),
-  booleanField(
-    'fertility_method_standard_days',
-    'Fertility method: standard days',
-  ),
+  booleanField('fertility_method_sympto_thermal', 'Sympto-Thermal Method'),
+  booleanField('fertility_method_standard_days', 'Standard Days Method (SDM)'),
   booleanField(
     'fertility_method_lactational_amenorrhea',
-    'Fertility method: lactational amenorrhea',
+    'Lactational Amenorrhea Method (LAM)',
   ),
 ];
 
 final healthIndicatorFields = [
+  headingField('health_indicators_heading', '5. Health Indicators'),
   tableField('morbidity_records', 'Morbidity records', [
     textField('name', 'Name'),
     numberField('age', 'Age'),
@@ -1388,7 +1485,7 @@ final politicalLeadershipPatternFields = [
   ),
   multiSelectField(
     'conflict_resolution_approaches',
-    'Effective practices/approaches in settling issues',
+    'Effective practices/approaches in setting issues',
     [
       'Settlement among involved parties',
       'Brgy. hearing',

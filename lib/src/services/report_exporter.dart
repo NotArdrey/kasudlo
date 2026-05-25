@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -29,6 +30,7 @@ const _templatePdfPageAssets = [
   'assets/template/cdx_pdf/page-06.png',
 ];
 const _templatePdfPageFormat = PdfPageFormat(612, 935);
+const _pdfCheckMark = '__KASUDLO_PDF_CHECK_MARK__';
 
 enum ReportExportFormat { pdf, docs }
 
@@ -101,23 +103,70 @@ Future<List<int>> _buildDocxBytes(List<HealthSubmission> submissions) async {
     archive.addFile(ArchiveFile.bytes(name, await _loadAssetBytes(assetPath)));
   }
 
+  final templatePages = await _buildDocxTemplatePages(submissions);
+
   addFile('[Content_Types].xml', _contentTypesXml);
   addFile('_rels/.rels', _packageRelsXml);
   addFile('docProps/app.xml', _appPropsXml);
   addFile('docProps/core.xml', _corePropsXml());
-  addFile('word/_rels/document.xml.rels', _documentRelsXml);
+  addFile('word/_rels/document.xml.rels', _documentRelsXml(templatePages));
   addFile('word/styles.xml', _stylesXml);
-  addFile('word/document.xml', _documentXml(submissions));
+  addFile('word/document.xml', _documentXml(submissions, templatePages));
   await addAssetFile('word/media/college-of-nursing.png', _collegeLogoAsset);
   await addAssetFile(
     'word/media/bulacan-state-university.png',
     _universityLogoAsset,
   );
+  for (final page in templatePages) {
+    archive.addFile(ArchiveFile.bytes(page.mediaPath, page.bytes));
+  }
 
   return ZipEncoder().encode(archive);
 }
 
-String _documentXml(List<HealthSubmission> submissions) {
+Future<List<_DocxTemplatePage>> _buildDocxTemplatePages(
+  List<HealthSubmission> submissions,
+) async {
+  final records = submissions.isEmpty
+      ? const <HealthSubmission?>[null]
+      : submissions.cast<HealthSubmission?>();
+  final pages = <_DocxTemplatePage>[];
+  var relationshipId = 4;
+  var docPrId = 10;
+
+  for (var recordIndex = 0; recordIndex < records.length; recordIndex++) {
+    final submission = records[recordIndex];
+    for (
+      var pageIndex = 0;
+      pageIndex < _templatePdfPageAssets.length;
+      pageIndex++
+    ) {
+      final bytes = await _renderDocxTemplatePagePng(submission, pageIndex);
+      pages.add(
+        _DocxTemplatePage(
+          relationshipId: 'rId$relationshipId',
+          mediaPath:
+              'word/media/survey-${recordIndex + 1}-page-${pageIndex + 1}.png',
+          bytes: bytes,
+          docPrId: docPrId,
+          pageNumber: pageIndex + 1,
+        ),
+      );
+      relationshipId++;
+      docPrId++;
+    }
+  }
+
+  return pages;
+}
+
+String _documentXml(
+  List<HealthSubmission> submissions,
+  List<_DocxTemplatePage> templatePages,
+) {
+  final hasAppendix = submissions.any(
+    (submission) => _surveyResponseSections(submission).isNotEmpty,
+  );
   final buffer = StringBuffer()
     ..writeln('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
     ..writeln(
@@ -125,19 +174,158 @@ String _documentXml(List<HealthSubmission> submissions) {
     )
     ..writeln('<w:body>');
 
-  for (var index = 0; index < submissions.length; index++) {
-    if (index > 0) {
+  for (var index = 0; index < templatePages.length; index++) {
+    final isLastTemplatePage = index == templatePages.length - 1;
+    buffer.write(
+      _docxTemplatePageParagraph(
+        templatePages[index],
+        sectionProperties: isLastTemplatePage && hasAppendix
+            ? _templateDocxSectionProperties(nextPage: true)
+            : null,
+      ),
+    );
+    if (!isLastTemplatePage) {
       buffer.writeln(_pageBreakParagraph());
     }
-    buffer.write(_surveyDocumentSection(submissions[index], index));
+  }
+
+  if (hasAppendix) {
+    for (var index = 0; index < submissions.length; index++) {
+      if (index > 0) {
+        buffer.writeln(_pageBreakParagraph());
+      }
+      buffer.write(_surveyResponseDocumentSection(submissions[index]));
+    }
   }
 
   buffer
     ..writeln(
-      '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="720" w:right="540" w:bottom="720" w:left="540" w:header="360" w:footer="360" w:gutter="0"/></w:sectPr>',
+      hasAppendix
+          ? _normalDocxSectionProperties()
+          : _templateDocxSectionProperties(),
     )
     ..writeln('</w:body>')
     ..writeln('</w:document>');
+
+  return buffer.toString();
+}
+
+class _DocxTemplatePage {
+  const _DocxTemplatePage({
+    required this.relationshipId,
+    required this.mediaPath,
+    required this.bytes,
+    required this.docPrId,
+    required this.pageNumber,
+  });
+
+  final String relationshipId;
+  final String mediaPath;
+  final Uint8List bytes;
+  final int docPrId;
+  final int pageNumber;
+}
+
+const _docxTemplatePageWidthTwips = 12240;
+const _docxTemplatePageHeightTwips = 18700;
+const _docxTemplatePageWidthEmu = 7772400;
+const _docxTemplatePageHeightEmu = 11874500;
+
+String _templateDocxSectionProperties({bool nextPage = false}) {
+  final type = nextPage ? '<w:type w:val="nextPage"/>' : '';
+  return '<w:sectPr>$type<w:pgSz w:w="$_docxTemplatePageWidthTwips" w:h="$_docxTemplatePageHeightTwips"/><w:pgMar w:top="0" w:right="0" w:bottom="0" w:left="0" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>';
+}
+
+String _normalDocxSectionProperties() {
+  return '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="720" w:right="540" w:bottom="720" w:left="540" w:header="360" w:footer="360" w:gutter="0"/></w:sectPr>';
+}
+
+String _docxTemplatePageParagraph(
+  _DocxTemplatePage page, {
+  String? sectionProperties,
+}) {
+  final escapedName = _xmlEscape(
+    'COMMUNITY SURVEY TOOL Page ${page.pageNumber}',
+  );
+  final sectPr = sectionProperties ?? '';
+  return '''
+<w:p>
+  <w:pPr><w:spacing w:before="0" w:after="0"/>$sectPr</w:pPr>
+  <w:r>
+    <w:drawing>
+      <wp:inline distT="0" distB="0" distL="0" distR="0">
+        <wp:extent cx="$_docxTemplatePageWidthEmu" cy="$_docxTemplatePageHeightEmu"/>
+        <wp:docPr id="${page.docPrId}" name="$escapedName" descr="$escapedName"/>
+        <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>
+        <a:graphic>
+          <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+            <pic:pic>
+              <pic:nvPicPr><pic:cNvPr id="0" name="$escapedName"/><pic:cNvPicPr/></pic:nvPicPr>
+              <pic:blipFill><a:blip r:embed="${page.relationshipId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+              <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="$_docxTemplatePageWidthEmu" cy="$_docxTemplatePageHeightEmu"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+            </pic:pic>
+          </a:graphicData>
+        </a:graphic>
+      </wp:inline>
+    </w:drawing>
+  </w:r>
+</w:p>
+''';
+}
+
+String _surveyResponseDocumentSection(HealthSubmission submission) {
+  final sections = _surveyResponseSections(submission);
+  if (sections.isEmpty) {
+    return '';
+  }
+
+  final buffer = StringBuffer()
+    ..writeln(_sectionHeading('Captured PDF Field Responses'))
+    ..writeln(
+      _table(
+        [
+          ['Field', 'Response'],
+          ['Respondent name', submission.respondentName],
+          ['Address', submission.address],
+          ['Family members count', '${submission.familyMembersCount}'],
+          ['Health problems', _listOrBlank(submission.healthProblems)],
+          ['Vaccination status', submission.vaccinationStatus],
+          ['Water and sanitation status', submission.waterSanitation],
+          ['Nutritional status', submission.nutritionalStatus],
+          ['Community concerns', _listOrBlank(submission.communityConcerns)],
+          ['Notes', submission.notes],
+          for (var index = 0; index < submission.familyMembers.length; index++)
+            [
+              'Family member ${index + 1}',
+              [
+                submission.familyMembers[index].name,
+                submission.familyMembers[index].relationship,
+                submission.familyMembers[index].age?.toString() ?? '',
+                _listOrBlank(submission.familyMembers[index].healthProblems),
+                submission.familyMembers[index].vaccinationStatus,
+                submission.familyMembers[index].nutritionalStatus,
+              ].where((value) => value.trim().isNotEmpty).join(' | '),
+            ],
+        ],
+        headerRows: 1,
+        fontSize: 10,
+      ),
+    );
+
+  for (final section in sections) {
+    buffer
+      ..writeln(_subHeading(section.title))
+      ..writeln(
+        _table(
+          [
+            ['Field', 'Response'],
+            for (final row in section.rows) [row.field, row.response],
+          ],
+          headerRows: 1,
+          fontSize: 10,
+        ),
+      );
+  }
 
   return buffer.toString();
 }
@@ -346,7 +534,7 @@ String _surveyDocumentSection(HealthSubmission submission, int sectionIndex) {
       _table([
         ['Political / Leadership Patterns', ''],
         ['Conditions / events / issues that cause social conflicts', ''],
-        ['Practices / approaches effective in settling issues', ''],
+        ['Practices / approaches effective in setting issues', ''],
       ]),
     )
     ..writeln(
@@ -530,6 +718,7 @@ List<String> _demographicTemplateSurveyRow(
     value('birthdate_day'),
     value('birthdate_year'),
     _choiceCode(value('marital_status'), const {
+      'child': '1',
       'single': '2',
       'married': '3',
       'married but separated': '4',
@@ -624,6 +813,80 @@ String _surveyRowValue(
     }
   }
   return '';
+}
+
+String _incomeEarnerName(
+  HealthSubmission submission,
+  Map<String, dynamic> row,
+) {
+  final explicitName = _surveyRowValue(row, 'family_member_name', [
+    'name_of_family_member',
+    'name',
+  ]);
+  if (explicitName.isNotEmpty) {
+    return explicitName;
+  }
+
+  final memberNo = _surveyRowValue(row, 'family_member_no', ['member_no']);
+  final lookupNo = memberNo.isEmpty
+      ? _surveyRowValue(row, 'earner_no')
+      : memberNo;
+  if (lookupNo.isEmpty) {
+    return '';
+  }
+
+  final surveyMemberRows = _surveyMapRows(
+    submission.surveyData['family_members'],
+  );
+  for (var index = 0; index < surveyMemberRows.length; index++) {
+    final memberRow = surveyMemberRows[index];
+    final candidateNo = _surveyRowValue(memberRow, 'member_no');
+    final fallbackNo = '${index + 1}';
+    if (_sameMemberNumber(
+      candidateNo.isEmpty ? fallbackNo : candidateNo,
+      lookupNo,
+    )) {
+      return _surveyRowValue(memberRow, 'name_of_family_member', ['name']);
+    }
+  }
+
+  for (final member in submission.familyMembers) {
+    final memberNo = _surveyValueLabel(member.details['member_no']);
+    if (_sameMemberNumber(memberNo, lookupNo)) {
+      return member.name;
+    }
+  }
+  if (_sameMemberNumber(lookupNo, '1')) {
+    return submission.respondentName;
+  }
+  final familyMembersIncludeRespondent =
+      submission.familyMembers.isNotEmpty &&
+      _normalizeSurveyChoice(submission.familyMembers.first.name) ==
+          _normalizeSurveyChoice(submission.respondentName);
+  for (var index = 0; index < submission.familyMembers.length; index++) {
+    final impliedNo = familyMembersIncludeRespondent ? index + 1 : index + 2;
+    if (_sameMemberNumber(lookupNo, '$impliedNo')) {
+      return submission.familyMembers[index].name;
+    }
+  }
+
+  return '';
+}
+
+bool _sameMemberNumber(String left, String right) {
+  final normalizedLeft = left.trim();
+  final normalizedRight = right.trim();
+  if (normalizedLeft.isEmpty || normalizedRight.isEmpty) {
+    return false;
+  }
+
+  final leftNumber = num.tryParse(normalizedLeft);
+  final rightNumber = num.tryParse(normalizedRight);
+  if (leftNumber != null && rightNumber != null) {
+    return leftNumber == rightNumber;
+  }
+
+  return normalizedLeft == normalizedRight;
 }
 
 String _choiceCode(String value, Map<String, String> codes) {
@@ -893,7 +1156,8 @@ List<_SurveyExportSection> _surveyResponseSections(
   for (final section in surveySections) {
     final rows = <_SurveyExportRow>[];
     for (final field in section.fields) {
-      if (field.type == SurveyFieldType.note) {
+      if (field.type == SurveyFieldType.note ||
+          field.type == SurveyFieldType.heading) {
         continue;
       }
 
@@ -949,7 +1213,8 @@ List<_SurveyExportRow> _surveyFieldRows(SurveyField field, Object? value) {
     final exportedChildKeys = <String>{};
 
     for (final childField in field.fields) {
-      if (childField.type == SurveyFieldType.note) {
+      if (childField.type == SurveyFieldType.note ||
+          childField.type == SurveyFieldType.heading) {
         continue;
       }
 
@@ -1091,14 +1356,32 @@ const _packageRelsXml = '''
 </Relationships>
 ''';
 
-const _documentRelsXml = '''
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/college-of-nursing.png"/>
-  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/bulacan-state-university.png"/>
-</Relationships>
-''';
+String _documentRelsXml(List<_DocxTemplatePage> templatePages) {
+  final buffer = StringBuffer()
+    ..writeln('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
+    ..writeln(
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
+    )
+    ..writeln(
+      '  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>',
+    )
+    ..writeln(
+      '  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/college-of-nursing.png"/>',
+    )
+    ..writeln(
+      '  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/bulacan-state-university.png"/>',
+    );
+
+  for (final page in templatePages) {
+    final target = page.mediaPath.replaceFirst('word/', '');
+    buffer.writeln(
+      '  <Relationship Id="${page.relationshipId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="$target"/>',
+    );
+  }
+
+  buffer.writeln('</Relationships>');
+  return buffer.toString();
+}
 
 const _appPropsXml = '''
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1175,10 +1458,6 @@ void _addTemplatePdfRecord(
       ),
     );
   }
-
-  if (submission != null && submission.surveyData.isNotEmpty) {
-    _addSurveyDataPdfAppendix(document, submission, theme);
-  }
 }
 
 void _addSurveyDataPdfAppendix(
@@ -1250,6 +1529,277 @@ List<pw.Widget> _surveyPdfSection(_SurveyExportSection section) {
     ),
     pw.SizedBox(height: 10),
   ];
+}
+
+class _TemplateOverlayItem {
+  const _TemplateOverlayItem.text({
+    required this.value,
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.size,
+    required this.align,
+  }) : height = 0,
+       isCheckMark = false;
+
+  const _TemplateOverlayItem.checkMark({
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.height,
+    required this.size,
+  }) : value = '',
+       align = pw.TextAlign.left,
+       isCheckMark = true;
+
+  final String value;
+  final double left;
+  final double top;
+  final double width;
+  final double height;
+  final double size;
+  final pw.TextAlign align;
+  final bool isCheckMark;
+}
+
+List<_TemplateOverlayItem>? _activeTemplateOverlayRecorder;
+
+Future<Uint8List> _renderDocxTemplatePagePng(
+  HealthSubmission? submission,
+  int pageIndex,
+) async {
+  final templateBytes = await _loadAssetBytes(
+    _templatePdfPageAssets[pageIndex],
+  );
+  final pageImage = img.decodePng(templateBytes);
+  if (pageImage == null) {
+    return templateBytes;
+  }
+
+  if (submission != null) {
+    for (final item in _recordTemplateOverlayItems(submission, pageIndex)) {
+      _drawTemplateOverlayItem(pageImage, item);
+    }
+  }
+
+  return img.encodePng(pageImage);
+}
+
+List<_TemplateOverlayItem> _recordTemplateOverlayItems(
+  HealthSubmission submission,
+  int pageIndex,
+) {
+  final previousRecorder = _activeTemplateOverlayRecorder;
+  final items = <_TemplateOverlayItem>[];
+  _activeTemplateOverlayRecorder = items;
+  try {
+    _templatePdfOverlay(submission, pageIndex);
+  } finally {
+    _activeTemplateOverlayRecorder = previousRecorder;
+  }
+  return items;
+}
+
+void _recordTemplateTextOverlay(
+  String value,
+  double left,
+  double top, {
+  required double width,
+  required double size,
+  required pw.TextAlign align,
+}) {
+  final recorder = _activeTemplateOverlayRecorder;
+  final text = _valueOrBlank(value);
+  if (recorder == null || text.isEmpty) {
+    return;
+  }
+
+  final leftPx = left * _templateImageWidthPx / _templatePdfPageFormat.width;
+  final topPx = top * _templateImageHeightPx / _templatePdfPageFormat.height;
+  final widthPx = width * _templateImageWidthPx / _templatePdfPageFormat.width;
+  if (_isPdfCheckMark(text)) {
+    recorder.add(
+      _TemplateOverlayItem.checkMark(
+        left: leftPx,
+        top: topPx,
+        width: widthPx,
+        height: widthPx,
+        size: size,
+      ),
+    );
+    return;
+  }
+
+  recorder.add(
+    _TemplateOverlayItem.text(
+      value: text,
+      left: leftPx,
+      top: topPx,
+      width: widthPx,
+      size: size,
+      align: align,
+    ),
+  );
+}
+
+void _recordTemplateMarkOverlay(
+  String value,
+  double left,
+  double top, {
+  required double width,
+  required double height,
+  required double size,
+}) {
+  final recorder = _activeTemplateOverlayRecorder;
+  final markValue = _valueOrBlank(value);
+  if (recorder == null || markValue.isEmpty) {
+    return;
+  }
+
+  if (_isPdfCheckMark(markValue)) {
+    recorder.add(
+      _TemplateOverlayItem.checkMark(
+        left: left,
+        top: top,
+        width: width,
+        height: height,
+        size: size,
+      ),
+    );
+    return;
+  }
+
+  recorder.add(
+    _TemplateOverlayItem.text(
+      value: markValue,
+      left: left,
+      top: top,
+      width: width,
+      size: size,
+      align: pw.TextAlign.center,
+    ),
+  );
+}
+
+void _drawTemplateOverlayItem(img.Image pageImage, _TemplateOverlayItem item) {
+  if (item.isCheckMark) {
+    _drawTemplateCheckMark(pageImage, item);
+    return;
+  }
+  _drawTemplateText(pageImage, item);
+}
+
+void _drawTemplateText(img.Image pageImage, _TemplateOverlayItem item) {
+  final font = img.arial14;
+  final sourceHeight = font.lineHeight <= 0 ? 14 : font.lineHeight;
+  final targetHeight =
+      (item.size * _templateImageHeightPx / _templatePdfPageFormat.height)
+          .round()
+          .clamp(6, 18);
+  final scale = targetHeight / sourceHeight;
+  final fittedText = _fitTemplateOverlayText(
+    font,
+    item.value,
+    item.width,
+    scale,
+  );
+  if (fittedText.isEmpty) {
+    return;
+  }
+
+  final textWidth = _bitmapTextWidth(font, fittedText);
+  final textImage = img.Image(
+    width: textWidth <= 0 ? 1 : textWidth,
+    height: sourceHeight,
+    numChannels: 4,
+  );
+  img.fill(textImage, color: img.ColorRgba8(0, 0, 0, 0));
+  img.drawString(
+    textImage,
+    fittedText,
+    font: font,
+    x: 0,
+    y: 0,
+    color: img.ColorRgb8(0, 0, 0),
+  );
+
+  final targetWidth = (textImage.width * scale).round().clamp(
+    1,
+    pageImage.width,
+  );
+  final scaledText = img.copyResize(
+    textImage,
+    width: targetWidth,
+    height: targetHeight,
+    interpolation: img.Interpolation.average,
+  );
+  var x = item.left.round();
+  if (item.align == pw.TextAlign.center) {
+    x = (item.left + (item.width - scaledText.width) / 2).round();
+  } else if (item.align == pw.TextAlign.right) {
+    x = (item.left + item.width - scaledText.width).round();
+  }
+  img.compositeImage(pageImage, scaledText, dstX: x, dstY: item.top.round());
+}
+
+String _fitTemplateOverlayText(
+  img.BitmapFont font,
+  String value,
+  double width,
+  double scale,
+) {
+  var text = value.trim();
+  if (text.isEmpty) {
+    return '';
+  }
+
+  final maxSourceWidth = (width / scale).floor();
+  if (_bitmapTextWidth(font, text) <= maxSourceWidth) {
+    return text;
+  }
+
+  const suffix = '...';
+  while (text.isNotEmpty &&
+      _bitmapTextWidth(font, '$text$suffix') > maxSourceWidth) {
+    text = text.substring(0, text.length - 1).trimRight();
+  }
+  return text.isEmpty ? '' : '$text$suffix';
+}
+
+int _bitmapTextWidth(img.BitmapFont font, String text) {
+  var width = 0;
+  for (final codeUnit in text.codeUnits) {
+    final character = font.characters[codeUnit];
+    width += character?.xAdvance ?? (font.base ~/ 2);
+  }
+  return width;
+}
+
+void _drawTemplateCheckMark(img.Image pageImage, _TemplateOverlayItem item) {
+  final color = img.ColorRgb8(0, 0, 0);
+  final left = item.left.round();
+  final top = item.top.round();
+  final width = item.width.round();
+  final height = item.height.round();
+  final thickness = (item.size / 2).clamp(2, 4);
+  img.drawLine(
+    pageImage,
+    x1: left + (width * 0.16).round(),
+    y1: top + (height * 0.48).round(),
+    x2: left + (width * 0.38).round(),
+    y2: top + (height * 0.22).round(),
+    color: color,
+    thickness: thickness,
+  );
+  img.drawLine(
+    pageImage,
+    x1: left + (width * 0.38).round(),
+    y1: top + (height * 0.22).round(),
+    x2: left + (width * 0.86).round(),
+    y2: top + (height * 0.76).round(),
+    color: color,
+    thickness: thickness,
+  );
 }
 
 List<pw.Widget> _templatePdfOverlay(
@@ -1361,7 +1911,7 @@ List<pw.Widget> _templatePageOneOverlay(HealthSubmission submission) {
           align: pw.TextAlign.center,
         ),
       )
-      ..add(_templateText(row[1], 43.0, top, width: 112.5, size: 5.0))
+      ..add(_templateText(row[1], 45.0, top, width: 110.5, size: 5.0))
       ..add(
         _templateText(
           row[2],
@@ -1601,7 +2151,7 @@ List<pw.Widget> _templatePageTwoOverlay(HealthSubmission submission) {
   mark('family_descent', 'Patrilineal', 215, 138);
   mark('family_descent', 'Matrilineal', 388, 139);
   mark('family_descent', 'Bilateral', 560, 139);
-  text('dialect_frequently_used', 315, 174, width: 370);
+  text('dialect_frequently_used', 315, 177, width: 370);
 
   mark('services_in_community', 'Religious services', 330, 271);
   markAny(
@@ -1656,10 +2206,17 @@ List<pw.Widget> _templatePageTwoOverlay(HealthSubmission submission) {
   text('mode_of_communication_other', 570, 432, width: 160);
 
   final incomeEarners = _surveyMapRows(data['income_earners']);
-  text('income_earner_count', 380, 512, width: 28);
+  text('income_earner_count', 380, 508, width: 28);
   for (var index = 0; index < incomeEarners.length && index < 4; index++) {
     final row = incomeEarners[index];
-    final top = 512.0 + index * 18.0;
+    final top = 508.0 + index * 18.0;
+    _addTemplateTextIfNotEmpty(
+      widgets,
+      _incomeEarnerName(submission, row),
+      455,
+      top,
+      width: 100,
+    );
     _addTemplateTextIfNotEmpty(
       widgets,
       _surveyRowValue(row, 'family_position'),
@@ -2000,7 +2557,8 @@ List<pw.Widget> _templatePageThreeOverlay(HealthSubmission submission) {
   final animalRows = _surveyMapRows(data['rabies_carrier_animals']);
   for (var index = 0; index < animalRows.length && index < 1; index++) {
     final row = animalRows[index];
-    final top = 1210.0 + index * 18.0;
+    final top = 1209.0 + index * 17.0;
+    final markTop = 1206.0 + index * 17.0;
     _addTemplateTextIfNotEmpty(
       widgets,
       _surveyRowValue(row, 'animal_kind'),
@@ -2021,33 +2579,37 @@ List<pw.Widget> _templatePageThreeOverlay(HealthSubmission submission) {
       widgets,
       _yesNoMark(row['kept_inside_yard']).isNotEmpty,
       358,
-      top,
+      markTop,
       size: 6.0,
       optionBox: false,
+      optionHeight: 17.0,
     );
     _addTemplateMarkIf(
       widgets,
       _yesNoMark(row['kept_free_outside']).isNotEmpty,
       515,
-      top,
+      markTop,
       size: 6.0,
       optionBox: false,
+      optionHeight: 17.0,
     );
     _addTemplateMarkIf(
       widgets,
       _yesNoMark(row['with_regular_vaccination']).isNotEmpty,
       685,
-      top,
+      markTop,
       size: 6.0,
       optionBox: false,
+      optionHeight: 17.0,
     );
     _addTemplateMarkIf(
       widgets,
       _yesNoMark(row['without_vaccination']).isNotEmpty,
       835,
-      top,
+      markTop,
       size: 6.0,
       optionBox: false,
+      optionHeight: 17.0,
     );
   }
 
@@ -2096,8 +2658,8 @@ List<pw.Widget> _templatePageFourOverlay(HealthSubmission submission) {
     );
   }
 
-  markCell('uses_safety_devices_when_necessary', 'Practice', 620, 166);
-  markCell('uses_safety_devices_when_necessary', 'Not Practiced', 790, 166);
+  markCell('uses_safety_devices_when_necessary', 'Practice', 620, 156);
+  markCell('uses_safety_devices_when_necessary', 'Not Practiced', 790, 156);
   markYesNo('has_cigarette_smoker_in_family', 733, 791, 207);
   _addTemplateMarkIf(
     widgets,
@@ -2271,12 +2833,12 @@ List<pw.Widget> _templatePageFourOverlay(HealthSubmission submission) {
 
   final recallRows = _surveyMapRows(data['food_recall_24_hour']);
   const recallTops = {
-    'breakfast': 779.0,
-    'snack': 799.0,
-    'lunch': 817.0,
-    'dinner': 852.0,
-    'midnight snack': 869.0,
-    'midnightsnack': 869.0,
+    'breakfast': 774.0,
+    'snack': 791.0,
+    'lunch': 808.0,
+    'dinner': 843.0,
+    'midnight snack': 860.0,
+    'midnightsnack': 860.0,
   };
   var snackIndex = 0;
   for (final row in recallRows) {
@@ -2285,7 +2847,7 @@ List<pw.Widget> _templatePageFourOverlay(HealthSubmission submission) {
     );
     var top = recallTops[normalizedTime];
     if (normalizedTime == 'snack') {
-      top = snackIndex == 0 ? 799.0 : 835.0;
+      top = snackIndex == 0 ? 791.0 : 826.0;
       snackIndex++;
     }
     if (top == null) {
@@ -2295,7 +2857,7 @@ List<pw.Widget> _templatePageFourOverlay(HealthSubmission submission) {
       widgets,
       _surveyRowValue(row, 'date'),
       42,
-      top + 1.0,
+      top,
       width: 130,
       size: 5.4,
     );
@@ -2303,7 +2865,7 @@ List<pw.Widget> _templatePageFourOverlay(HealthSubmission submission) {
       widgets,
       _surveyRowValue(row, 'food_taken'),
       545,
-      top + 1.0,
+      top,
       width: 380,
       size: 5.4,
     );
@@ -2812,13 +3374,14 @@ List<pw.Widget> _templatePageFiveOverlay(HealthSubmission submission) {
     double width = 120,
     double size = 5.0,
   }) {
+    final verticalOffset = _isPdfCheckMark(_valueOrBlank(value)) ? 9.5 : 6.5;
     return _templateCellTextPx(
       value,
       left,
       top,
       width: width,
       size: size,
-      verticalOffset: 9.5,
+      verticalOffset: verticalOffset,
     );
   }
 
@@ -2957,8 +3520,22 @@ List<pw.Widget> _templatePageSixOverlay(HealthSubmission submission) {
           _surveyString(data, 'midwife_count_per_population'),
           _surveyString(data, 'other_rhu_team_count_per_population'),
         ].where((value) => value.trim().isNotEmpty).join('; ');
-  _addTemplateTextIfNotEmpty(widgets, teamSummary, 665, 335, width: 245);
-  text('existing_manpower_development_policies', 352, 351, width: 485);
+  _addTemplateTextIfNotEmpty(
+    widgets,
+    teamSummary,
+    675,
+    330,
+    width: 245,
+    size: 4.8,
+  );
+  _addTemplateTextIfNotEmpty(
+    widgets,
+    _surveyString(data, 'existing_manpower_development_policies'),
+    382,
+    349,
+    width: 545,
+    size: 4.8,
+  );
   text('rhu_physicians_schedule', 215, 383, width: 220);
   text('rhu_nurse_schedule', 183, 400, width: 250);
   text('bhc_midwife_schedule', 205, 418, width: 230);
@@ -3026,13 +3603,42 @@ pw.Widget _templateText(
   double size = 6.2,
   pw.TextAlign align = pw.TextAlign.left,
 }) {
+  final value = _valueOrBlank(text);
+  if (_isPdfCheckMark(value)) {
+    final markExtent = width < size + 2.2 ? width : size + 2.2;
+    final markLeft = left + (width - markExtent) / 2;
+    _recordTemplateTextOverlay(
+      value,
+      markLeft,
+      top,
+      width: markExtent,
+      size: size,
+      align: align,
+    );
+    return _templateCheckMark(
+      markLeft,
+      top,
+      width: markExtent,
+      height: markExtent,
+      strokeWidth: size / 6,
+    );
+  }
+
+  _recordTemplateTextOverlay(
+    value,
+    left,
+    top,
+    width: width,
+    size: size,
+    align: align,
+  );
   return pw.Positioned(
     left: left,
     top: top,
     child: pw.SizedBox(
       width: width,
       child: pw.Text(
-        _valueOrBlank(text),
+        value,
         maxLines: 1,
         textAlign: align,
         style: pw.TextStyle(fontSize: size),
@@ -3090,22 +3696,79 @@ pw.Widget _templateCellTextPx(
 pw.Widget _templateMarkPx(
   double left,
   double top, {
-  String value = 'x',
+  String value = _pdfCheckMark,
   double size = 6.8,
   bool optionBox = true,
   double optionWidth = 28.0,
+  double optionHeight = 18.0,
 }) {
   const markBoxWidth = 14.0;
+  const markBoxHeight = 14.0;
   final markLeft = optionBox ? left + (optionWidth - markBoxWidth) / 2 : left;
-  final markTop = optionBox ? top + 3.0 : top - 1.0;
-
-  return _templateTextPx(
-    value,
+  final markTop = top + (optionHeight - markBoxHeight) / 2;
+  final markValue = _valueOrBlank(value);
+  final markWidth = _templatePxX(markBoxWidth);
+  final markHeight = _templatePxY(markBoxHeight);
+  _recordTemplateMarkOverlay(
+    markValue,
     markLeft,
     markTop,
     width: markBoxWidth,
+    height: markBoxHeight,
     size: size,
-    align: pw.TextAlign.center,
+  );
+
+  return pw.Positioned(
+    left: _templatePxX(markLeft),
+    top: _templatePxY(markTop),
+    child: pw.SizedBox(
+      width: markWidth,
+      height: markHeight,
+      child: _isPdfCheckMark(markValue)
+          ? _checkMarkPaint(markWidth, markHeight, strokeWidth: size / 6)
+          : pw.Center(
+              child: pw.Text(
+                markValue,
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(fontSize: size),
+              ),
+            ),
+    ),
+  );
+}
+
+bool _isPdfCheckMark(String value) => value == _pdfCheckMark;
+
+pw.Widget _templateCheckMark(
+  double left,
+  double top, {
+  required double width,
+  required double height,
+  required double strokeWidth,
+}) {
+  return pw.Positioned(
+    left: left,
+    top: top,
+    child: _checkMarkPaint(width, height, strokeWidth: strokeWidth),
+  );
+}
+
+pw.Widget _checkMarkPaint(
+  double width,
+  double height, {
+  required double strokeWidth,
+}) {
+  return pw.CustomPaint(
+    size: PdfPoint(width, height),
+    painter: (canvas, size) {
+      canvas
+        ..moveTo(size.x * 0.16, size.y * 0.48)
+        ..lineTo(size.x * 0.38, size.y * 0.22)
+        ..lineTo(size.x * 0.86, size.y * 0.76)
+        ..setStrokeColor(PdfColors.black)
+        ..setLineWidth(strokeWidth)
+        ..strokePath();
+    },
   );
 }
 
@@ -3114,10 +3777,11 @@ void _addTemplateMarkIf(
   bool condition,
   double left,
   double top, {
-  String value = 'x',
+  String value = _pdfCheckMark,
   double size = 6.8,
   bool optionBox = true,
   double optionWidth = 28.0,
+  double optionHeight = 18.0,
 }) {
   if (!condition) {
     return;
@@ -3130,6 +3794,7 @@ void _addTemplateMarkIf(
       size: size,
       optionBox: optionBox,
       optionWidth: optionWidth,
+      optionHeight: optionHeight,
     ),
   );
 }
@@ -3200,9 +3865,9 @@ String _shortTemplateDateOrMark(String value) {
   if (trimmed.toLowerCase() == 'yes' ||
       trimmed.toLowerCase() == 'true' ||
       trimmed.toLowerCase() == 'x') {
-    return 'x';
+    return _pdfCheckMark;
   }
-  return 'x';
+  return _pdfCheckMark;
 }
 
 List<String> _wrapOverlayText(String text, int width) {
@@ -4151,7 +4816,7 @@ pw.Widget _surveyPdfPageSix(HealthSubmission submission) {
       ),
       _choiceLine(
         '3.',
-        'Practices/ approaches which are effective in settling issues and concern within the community',
+        'Practices/ approaches which are effective in setting issues and concern within the community',
         [
           '( ) Settlement among involved parties',
           '( ) Brgy. hearing',
@@ -4218,9 +4883,9 @@ List<List<String>> _immunizationTemplateRows(HealthSubmission submission) {
       '',
       '',
       '',
-      complete ? 'X' : '',
-      incomplete ? 'X' : '',
-      complete ? 'X' : status,
+      complete ? _pdfCheckMark : '',
+      incomplete ? _pdfCheckMark : '',
+      complete ? _pdfCheckMark : status,
     ];
   }
 
@@ -4288,7 +4953,7 @@ List<List<String>> _morbidityTemplateRows(HealthSubmission submission) {
       submission.respondentAge?.toString() ?? '',
       '',
       _listOrBlank(submission.healthProblems),
-      'X',
+      _pdfCheckMark,
       '',
       '',
       '',
@@ -4303,7 +4968,7 @@ List<List<String>> _morbidityTemplateRows(HealthSubmission submission) {
       member.age?.toString() ?? '',
       '',
       _listOrBlank(member.healthProblems),
-      'X',
+      _pdfCheckMark,
       '',
       '',
       '',
@@ -4385,14 +5050,14 @@ List<List<String>> _bloodPressureTemplateRows(HealthSubmission submission) {
 
 String _yesNoMark(Object? value) {
   if (value is bool) {
-    return value ? 'X' : '';
+    return value ? _pdfCheckMark : '';
   }
   final normalized = '$value'.trim().toLowerCase();
   return normalized == 'yes' ||
           normalized == 'true' ||
           normalized == 'x' ||
           normalized == '1'
-      ? 'X'
+      ? _pdfCheckMark
       : '';
 }
 

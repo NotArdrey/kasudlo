@@ -10,6 +10,7 @@ import '../state/app_controller.dart';
 import '../survey_schema.dart';
 import '../theme.dart';
 import '../widgets/account_request_fields.dart';
+import '../widgets/ai_guidance_card.dart';
 import '../widgets/app_chrome.dart';
 import '../widgets/survey_form.dart';
 
@@ -188,6 +189,7 @@ class _ReportRecordsCardState extends State<_ReportRecordsCard> {
   final _searchController = TextEditingController();
   final _selectedSubmissionIds = <String>{};
   String _query = '';
+  ReportExportFormat? _exportingFormat;
 
   @override
   void didUpdateWidget(covariant _ReportRecordsCard oldWidget) {
@@ -226,6 +228,7 @@ class _ReportRecordsCardState extends State<_ReportRecordsCard> {
         )
         .toList();
     final selectedCount = selectedSubmissions.length;
+    final isExporting = _exportingFormat != null;
     final listMaxHeight = (MediaQuery.sizeOf(context).height * 0.48)
         .clamp(320.0, 560.0)
         .toDouble();
@@ -260,17 +263,25 @@ class _ReportRecordsCardState extends State<_ReportRecordsCard> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               OutlinedButton.icon(
-                onPressed: selectedCount == 0
+                onPressed: selectedCount == 0 || isExporting
                     ? null
                     : () => _exportSelected(ReportExportFormat.pdf),
-                icon: const Icon(Icons.picture_as_pdf_outlined),
+                icon: _ExportButtonIcon(
+                  format: ReportExportFormat.pdf,
+                  exportingFormat: _exportingFormat,
+                  idleIcon: Icons.picture_as_pdf_outlined,
+                ),
                 label: const Text('Export PDF'),
               ),
               OutlinedButton.icon(
-                onPressed: selectedCount == 0
+                onPressed: selectedCount == 0 || isExporting
                     ? null
                     : () => _exportSelected(ReportExportFormat.docs),
-                icon: const Icon(Icons.description_outlined),
+                icon: _ExportButtonIcon(
+                  format: ReportExportFormat.docs,
+                  exportingFormat: _exportingFormat,
+                  idleIcon: Icons.description_outlined,
+                ),
                 label: const Text('Export Docs'),
               ),
               TextButton.icon(
@@ -292,6 +303,16 @@ class _ReportRecordsCardState extends State<_ReportRecordsCard> {
                 ).textTheme.labelLarge?.copyWith(color: KasudloColors.muted),
               ),
             ],
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: _exportingFormat == null
+                ? const SizedBox.shrink()
+                : Padding(
+                    key: ValueKey(_exportingFormat),
+                    padding: const EdgeInsets.only(top: 12),
+                    child: _ExportProgressStatus(format: _exportingFormat!),
+                  ),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -387,19 +408,96 @@ class _ReportRecordsCardState extends State<_ReportRecordsCard> {
       return;
     }
 
-    final result = await exportReportRecords(
-      submissions: selectedSubmissions,
-      format: format,
-    );
-    if (!mounted) {
-      return;
+    setState(() => _exportingFormat = format);
+
+    try {
+      final result = await exportReportRecords(
+        submissions: selectedSubmissions,
+        format: format,
+      );
+      if (!mounted) {
+        return;
+      }
+
+      final recordLabel = result.recordCount == 1 ? 'record' : 'records';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Exported ${result.recordCount} $recordLabel to ${result.format.label}: ${result.savedLocation}',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not export ${format.label}.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _exportingFormat = null);
+      }
+    }
+  }
+}
+
+class _ExportButtonIcon extends StatelessWidget {
+  const _ExportButtonIcon({
+    required this.format,
+    required this.exportingFormat,
+    required this.idleIcon,
+  });
+
+  final ReportExportFormat format;
+  final ReportExportFormat? exportingFormat;
+  final IconData idleIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    if (exportingFormat != format) {
+      return Icon(idleIcon);
     }
 
-    final recordLabel = result.recordCount == 1 ? 'record' : 'records';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Exported ${result.recordCount} $recordLabel to ${result.format.label}: ${result.savedLocation}',
+    return const SizedBox.square(
+      dimension: 18,
+      child: CircularProgressIndicator(strokeWidth: 2.2),
+    );
+  }
+}
+
+class _ExportProgressStatus extends StatelessWidget {
+  const _ExportProgressStatus({required this.format});
+
+  final ReportExportFormat format;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colorScheme.primary.withValues(alpha: 0.18)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2.2),
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                'Preparing ${format.label} download...',
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -561,7 +659,7 @@ List<Widget> _reportDetailGroups(HealthSubmission submission) {
 
   addGroup('I. Demographic Variable', [
     _ReportDetailRow(
-      label: 'Name',
+      label: 'Informant',
       value: _displayValue(submission.respondentName),
     ),
     _ReportDetailRow(
@@ -589,30 +687,16 @@ List<Widget> _reportDetailGroups(HealthSubmission submission) {
     'II. Socio-economic, Cultural and Environmental',
     _socioEconomicReportFields,
   );
-  addGroup('III. Health and Illness Pattern', [
-    _ReportDetailRow(
-      label: 'Vaccination status',
-      value: _displayValue(submission.vaccinationStatus),
-    ),
-    _ReportDetailRow(
-      label: 'Water and sanitation',
-      value: _displayValue(submission.waterSanitation),
-    ),
-    _ReportDetailRow(
-      label: 'Nutritional status',
-      value: _displayValue(submission.nutritionalStatus),
-    ),
-    _ReportDetailRow(
-      label: 'Health problems',
-      value: _displayList(submission.healthProblems),
-    ),
-    ..._surveyResponseWidgets(_healthPatternReportFields, surveyData),
-  ]);
+  addSurveyGroup('III. Health and Illness Pattern', _healthPatternReportFields);
   addSurveyGroup('IV. Health Resource', healthResourceFields);
   addSurveyGroup(
     'V. Political/Leadership Patterns',
     politicalLeadershipPatternFields,
   );
+  final aiGuidance = submission.aiGuidance;
+  if (aiGuidance != null) {
+    groups.add(AiGuidanceCard(guidance: aiGuidance, isLoading: false));
+  }
   addGroup(
     'VI. Any concerns/suggestions regarding the life style in the area in general',
     [
@@ -708,14 +792,18 @@ class _ReportDetailRow extends StatelessWidget {
 }
 
 class _ReportEditHistory extends StatelessWidget {
-  const _ReportEditHistory({required this.entries});
+  const _ReportEditHistory({required this.entries, this.onEdit, this.onDelete});
 
   final List<ReportEditHistoryEntry> entries;
+  final ValueChanged<int>? onEdit;
+  final ValueChanged<int>? onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final sortedEntries = entries.toList()
-      ..sort((a, b) => b.editedAt.compareTo(a.editedAt));
+    final sortedEntries = List.generate(
+      entries.length,
+      (index) => _IndexedReportEditHistoryEntry(index, entries[index]),
+    )..sort((a, b) => b.entry.editedAt.compareTo(a.entry.editedAt));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -731,7 +819,15 @@ class _ReportEditHistory extends StatelessWidget {
           )
         else
           for (var index = 0; index < sortedEntries.length; index++) ...[
-            _ReportEditHistoryTile(entry: sortedEntries[index]),
+            _ReportEditHistoryTile(
+              entry: sortedEntries[index].entry,
+              onEdit: onEdit == null
+                  ? null
+                  : () => onEdit!(sortedEntries[index].index),
+              onDelete: onDelete == null
+                  ? null
+                  : () => onDelete!(sortedEntries[index].index),
+            ),
             if (index != sortedEntries.length - 1) const SizedBox(height: 8),
           ],
       ],
@@ -739,10 +835,23 @@ class _ReportEditHistory extends StatelessWidget {
   }
 }
 
+class _IndexedReportEditHistoryEntry {
+  const _IndexedReportEditHistoryEntry(this.index, this.entry);
+
+  final int index;
+  final ReportEditHistoryEntry entry;
+}
+
 class _ReportEditHistoryTile extends StatelessWidget {
-  const _ReportEditHistoryTile({required this.entry});
+  const _ReportEditHistoryTile({
+    required this.entry,
+    this.onEdit,
+    this.onDelete,
+  });
 
   final ReportEditHistoryEntry entry;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -750,6 +859,7 @@ class _ReportEditHistoryTile extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
+        color: Colors.white,
         border: Border.all(color: KasudloColors.border),
         borderRadius: BorderRadius.circular(6),
       ),
@@ -758,9 +868,28 @@ class _ReportEditHistoryTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              _formatReportDateTime(entry.editedAt),
-              style: Theme.of(context).textTheme.labelLarge,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    _formatReportDateTime(entry.editedAt),
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ),
+                if (onEdit != null)
+                  IconButton(
+                    tooltip: 'Edit history entry',
+                    onPressed: onEdit,
+                    icon: const Icon(Icons.edit_outlined),
+                  ),
+                if (onDelete != null)
+                  IconButton(
+                    tooltip: 'Delete history entry',
+                    onPressed: onDelete,
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+              ],
             ),
             if (editedBy != null && editedBy.isNotEmpty) ...[
               const SizedBox(height: 2),
@@ -798,6 +927,7 @@ class _NoMatchingRecords extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
+        color: Colors.white,
         border: Border.all(color: KasudloColors.border),
         borderRadius: BorderRadius.circular(6),
       ),
@@ -852,7 +982,7 @@ bool _matchesReportSearch({
 }
 
 String _formatReportDateTime(DateTime value) {
-  return DateFormat('MMM d, yyyy h:mm a').format(value);
+  return DateFormat('MMM d, yyyy h:mm a').format(value.toLocal());
 }
 
 String _displayValue(String value) {
@@ -934,7 +1064,8 @@ List<Widget> _surveyResponseWidgets(
   final widgets = <Widget>[];
 
   for (final field in fields) {
-    if (field.type == SurveyFieldType.note) {
+    if (field.type == SurveyFieldType.note ||
+        field.type == SurveyFieldType.heading) {
       continue;
     }
 
@@ -1119,6 +1250,7 @@ class _EditReportSheetState extends State<_EditReportSheet> {
   late final Set<String> _healthProblems;
   late final Set<String> _communityConcerns;
   late final Map<String, dynamic> _surveyData;
+  late final List<ReportEditHistoryEntry> _editHistory;
   late String _vaccinationStatus;
   late String _waterSanitation;
   late String _nutritionalStatus;
@@ -1140,16 +1272,16 @@ class _EditReportSheetState extends State<_EditReportSheet> {
     _healthProblems = submission.healthProblems.toSet();
     _communityConcerns = submission.communityConcerns.toSet();
     _surveyData = _surveyDataWithSubmissionFields(submission);
+    _editHistory = submission.editHistory.toList();
     _accountCreateRequested = accountCreateRequestedFromData(_surveyData);
     _accountEmailController = TextEditingController(
       text: accountEmailFromData(_surveyData),
     );
     _accountPasswordController = TextEditingController();
     _accountConfirmPasswordController = TextEditingController();
-    _vaccinationStatus = _optionValue(
-      vaccinationStatusOptions,
-      submission.vaccinationStatus,
-    );
+    _vaccinationStatus = submission.vaccinationStatus.trim().isEmpty
+        ? 'Unknown'
+        : submission.vaccinationStatus;
     _waterSanitation = _optionValue(
       waterSanitationOptions,
       submission.waterSanitation,
@@ -1212,7 +1344,11 @@ class _EditReportSheetState extends State<_EditReportSheet> {
                 const SizedBox(height: 12),
                 ..._editSections(),
                 const SizedBox(height: 18),
-                _ReportEditHistory(entries: widget.submission.editHistory),
+                _ReportEditHistory(
+                  entries: _editHistory,
+                  onEdit: _editHistoryEntry,
+                  onDelete: _confirmDeleteEditHistoryEntry,
+                ),
                 const SizedBox(height: 18),
                 Row(
                   children: [
@@ -1250,9 +1386,10 @@ class _EditReportSheetState extends State<_EditReportSheet> {
           TextFormField(
             controller: _nameController,
             textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(labelText: 'Name'),
-            validator: (value) =>
-                value == null || value.trim().isEmpty ? 'Enter a name' : null,
+            decoration: const InputDecoration(labelText: 'Informant'),
+            validator: (value) => value == null || value.trim().isEmpty
+                ? 'Enter informant'
+                : null,
           ),
           const SizedBox(height: 12),
           TextFormField(
@@ -1331,43 +1468,6 @@ class _EditReportSheetState extends State<_EditReportSheet> {
       _ReportFormExpansion(
         title: 'III. Health and Illness Pattern',
         children: [
-          _ReportDropdownField(
-            label: 'Vaccination status',
-            value: _vaccinationStatus,
-            options: _optionList(
-              vaccinationStatusOptions,
-              widget.submission.vaccinationStatus,
-            ),
-            onChanged: (value) => setState(() => _vaccinationStatus = value),
-          ),
-          const SizedBox(height: 12),
-          _ReportDropdownField(
-            label: 'Water and sanitation',
-            value: _waterSanitation,
-            options: _optionList(
-              waterSanitationOptions,
-              widget.submission.waterSanitation,
-            ),
-            onChanged: (value) => setState(() => _waterSanitation = value),
-          ),
-          const SizedBox(height: 12),
-          _ReportDropdownField(
-            label: 'Nutritional status',
-            value: _nutritionalStatus,
-            options: _optionList(
-              nutritionalStatusOptions,
-              widget.submission.nutritionalStatus,
-            ),
-            onChanged: (value) => setState(() => _nutritionalStatus = value),
-          ),
-          const SizedBox(height: 14),
-          _ReportChipGroup(
-            title: 'Health problems',
-            options: healthProblemOptions,
-            selected: _healthProblems,
-            onChanged: _toggleHealthProblem,
-          ),
-          const SizedBox(height: 14),
           SurveyFieldList(
             fields: _healthPatternReportFields,
             data: _surveyData,
@@ -1423,12 +1523,6 @@ class _EditReportSheetState extends State<_EditReportSheet> {
     ];
   }
 
-  void _toggleHealthProblem(String option, bool checked) {
-    setState(() {
-      checked ? _healthProblems.add(option) : _healthProblems.remove(option);
-    });
-  }
-
   void _toggleCommunityConcern(String option, bool checked) {
     setState(() {
       checked
@@ -1439,6 +1533,55 @@ class _EditReportSheetState extends State<_EditReportSheet> {
 
   void _setSurveyDataValue(String key, Object? value) {
     setState(() => _surveyData[key] = value);
+  }
+
+  Future<void> _editHistoryEntry(int index) async {
+    if (index < 0 || index >= _editHistory.length) {
+      return;
+    }
+
+    final edited = await showDialog<ReportEditHistoryEntry>(
+      context: context,
+      builder: (context) => _EditHistoryEntryDialog(entry: _editHistory[index]),
+    );
+    if (edited == null || !mounted) {
+      return;
+    }
+
+    setState(() => _editHistory[index] = edited);
+  }
+
+  Future<void> _confirmDeleteEditHistoryEntry(int index) async {
+    if (index < 0 || index >= _editHistory.length) {
+      return;
+    }
+
+    final entry = _editHistory[index];
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete history entry?'),
+        content: Text(
+          'Remove the edit history entry from ${_formatReportDateTime(entry.editedAt)}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() => _editHistory.removeAt(index));
   }
 
   Future<void> _save() async {
@@ -1452,13 +1595,24 @@ class _EditReportSheetState extends State<_EditReportSheet> {
     final familyMembersCount = int.parse(_familyCountController.text.trim());
     final healthProblems = _healthProblems.toList()..sort();
     final communityConcerns = _communityConcerns.toList()..sort();
+    final incomeEarners = normalizedIncomeEarnerRows(
+      _surveyData['income_earners'],
+      keepBlankRows: false,
+    );
+    final incomeEarnerCount = incomeEarnerCountFromRows(incomeEarners);
+    final vaccinationStatus = vaccinationStatusFromSurveyData({
+      ..._surveyData,
+      'income_earners': incomeEarners,
+    }, fallback: _vaccinationStatus);
     final surveyData = _compactReportSurveyData({
       ..._surveyData,
       'informant': respondentName,
       'address': address,
       'number_of_family': familyMembersCount,
+      'income_earners': incomeEarners,
+      'income_earner_count': incomeEarnerCount > 0 ? incomeEarnerCount : null,
       'health_problems': healthProblems,
-      'vaccination_status': _vaccinationStatus,
+      'vaccination_status': vaccinationStatus,
       'water_sanitation': _waterSanitation,
       'nutritional_status': _nutritionalStatus,
       'community_concerns': communityConcerns,
@@ -1475,27 +1629,28 @@ class _EditReportSheetState extends State<_EditReportSheet> {
       familyMembersCount: familyMembersCount,
       familyMembers: _familyMembersFromSurveyData(surveyData),
       healthProblems: healthProblems,
-      vaccinationStatus: _vaccinationStatus,
+      vaccinationStatus: vaccinationStatus,
       waterSanitation: _waterSanitation,
       nutritionalStatus: _nutritionalStatus,
       communityConcerns: communityConcerns,
       surveyData: surveyData,
       notes: _notesController.text.trim(),
+      editHistory: _editHistory.toList(),
     );
 
     final changes = reportEditChanges(
       previous: widget.submission,
       next: updated,
     );
+    final historyChanged = !reportEditHistoryEquals(
+      widget.submission.editHistory,
+      _editHistory,
+    );
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Save report changes?'),
-        content: Text(
-          changes.isEmpty
-              ? 'No field changes were detected. Save this report record anyway?'
-              : 'Apply ${changes.length} change${changes.length == 1 ? '' : 's'} to ${widget.submission.respondentName}?',
-        ),
+        content: Text(_saveConfirmationMessage(changes, historyChanged)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -1515,6 +1670,167 @@ class _EditReportSheetState extends State<_EditReportSheet> {
     }
 
     Navigator.of(context).pop(updated);
+  }
+
+  String _saveConfirmationMessage(List<String> changes, bool historyChanged) {
+    if (changes.isEmpty && historyChanged) {
+      return 'Save edit history changes for ${widget.submission.respondentName}?';
+    }
+    if (changes.isEmpty) {
+      return 'No field changes were detected. Save this report record anyway?';
+    }
+
+    final fieldChangeText =
+        '${changes.length} change${changes.length == 1 ? '' : 's'}';
+    if (historyChanged) {
+      return 'Apply $fieldChangeText and edit history changes to ${widget.submission.respondentName}?';
+    }
+    return 'Apply $fieldChangeText to ${widget.submission.respondentName}?';
+  }
+}
+
+class _EditHistoryEntryDialog extends StatefulWidget {
+  const _EditHistoryEntryDialog({required this.entry});
+
+  final ReportEditHistoryEntry entry;
+
+  @override
+  State<_EditHistoryEntryDialog> createState() =>
+      _EditHistoryEntryDialogState();
+}
+
+class _EditHistoryEntryDialogState extends State<_EditHistoryEntryDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _summaryController;
+  late final TextEditingController _editedByController;
+  late final TextEditingController _changesController;
+  late DateTime _editedAt;
+
+  @override
+  void initState() {
+    super.initState();
+    final entry = widget.entry;
+    _editedAt = entry.editedAt.toLocal();
+    _summaryController = TextEditingController(text: entry.summary);
+    _editedByController = TextEditingController(text: entry.editedBy ?? '');
+    _changesController = TextEditingController(text: entry.changes.join('\n'));
+  }
+
+  @override
+  void dispose() {
+    _summaryController.dispose();
+    _editedByController.dispose();
+    _changesController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit history entry'),
+      content: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _pickEditedAt,
+                icon: const Icon(Icons.schedule_outlined),
+                label: Text(_formatReportDateTime(_editedAt)),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _summaryController,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: 'Summary'),
+                validator: (value) => value == null || value.trim().isEmpty
+                    ? 'Enter a summary'
+                    : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _editedByController,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: 'Edited by'),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _changesController,
+                minLines: 4,
+                maxLines: 6,
+                decoration: const InputDecoration(
+                  labelText: 'Changes',
+                  alignLabelWithHint: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: _save,
+          icon: const Icon(Icons.save_outlined),
+          label: const Text('Save entry'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickEditedAt() async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime(_editedAt.year, _editedAt.month, _editedAt.day),
+      firstDate: DateTime(1900),
+      lastDate: DateTime(2100),
+    );
+    if (pickedDate == null || !mounted) {
+      return;
+    }
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_editedAt),
+    );
+    if (pickedTime == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _editedAt = DateTime(
+        pickedDate.year,
+        pickedDate.month,
+        pickedDate.day,
+        pickedTime.hour,
+        pickedTime.minute,
+      );
+    });
+  }
+
+  void _save() {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    final editedBy = _editedByController.text.trim();
+    Navigator.of(context).pop(
+      ReportEditHistoryEntry(
+        editedAt: _editedAt.toUtc(),
+        summary: _summaryController.text.trim(),
+        editedBy: editedBy.isEmpty ? null : editedBy,
+        changes: _changesController.text
+            .split(RegExp(r'\r?\n'))
+            .map((change) => change.trim())
+            .where((change) => change.isNotEmpty)
+            .toList(),
+      ),
+    );
   }
 }
 
@@ -1560,10 +1876,12 @@ class _ReportFormExpansion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: KasudloColors.border),
+    return Material(
+      color: Colors.white,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(6),
+        side: const BorderSide(color: KasudloColors.border),
       ),
       child: ExpansionTile(
         title: Text(title),
@@ -1571,42 +1889,6 @@ class _ReportFormExpansion extends StatelessWidget {
         childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         children: children,
       ),
-    );
-  }
-}
-
-class _ReportDropdownField extends StatelessWidget {
-  const _ReportDropdownField({
-    required this.label,
-    required this.value,
-    required this.options,
-    required this.onChanged,
-  });
-
-  final String label;
-  final String value;
-  final List<String> options;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      isExpanded: true,
-      decoration: InputDecoration(labelText: label),
-      items: options
-          .map(
-            (option) => DropdownMenuItem(
-              value: option,
-              child: Text(option, overflow: TextOverflow.ellipsis),
-            ),
-          )
-          .toList(),
-      onChanged: (value) {
-        if (value != null) {
-          onChanged(value);
-        }
-      },
     );
   }
 }
@@ -1646,14 +1928,6 @@ class _ReportChipGroup extends StatelessWidget {
       ],
     );
   }
-}
-
-List<String> _optionList(List<String> options, String currentValue) {
-  final normalizedValue = currentValue.trim();
-  if (normalizedValue.isEmpty || options.contains(normalizedValue)) {
-    return options;
-  }
-  return [normalizedValue, ...options];
 }
 
 String _optionValue(List<String> options, String currentValue) {

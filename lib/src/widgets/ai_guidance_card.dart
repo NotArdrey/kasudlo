@@ -9,7 +9,7 @@ class AiGuidanceCard extends StatelessWidget {
     super.key,
     required this.guidance,
     required this.isLoading,
-    required this.onGenerate,
+    this.onGenerate,
     this.errorMessage,
   });
 
@@ -44,16 +44,19 @@ class AiGuidanceCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: isLoading ? null : onGenerate,
-            icon: isLoading
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.psychology_alt_outlined),
-            label: Text(currentGuidance == null ? 'Generate AI' : 'Refresh AI'),
-          ),
+          if (onGenerate != null)
+            OutlinedButton.icon(
+              onPressed: isLoading ? null : onGenerate,
+              icon: isLoading
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.psychology_alt_outlined),
+              label: Text(
+                currentGuidance == null ? 'Generate AI' : 'Refresh AI',
+              ),
+            ),
           if (errorMessage != null) ...[
             const SizedBox(height: 12),
             Text(
@@ -61,7 +64,8 @@ class AiGuidanceCard extends StatelessWidget {
               style: const TextStyle(color: KasudloColors.critical),
             ),
           ],
-          const SizedBox(height: 12),
+          if (onGenerate != null || errorMessage != null)
+            const SizedBox(height: 12),
           if (currentGuidance == null)
             Text(
               'No AI guidance yet.',

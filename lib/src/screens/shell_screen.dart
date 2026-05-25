@@ -15,8 +15,8 @@ class ShellScreen extends ConsumerWidget {
     final items = [
       const _NavItem(
         branchIndex: 0,
-        icon: Icons.dashboard_outlined,
-        selectedIcon: Icons.dashboard,
+        icon: Icons.home_outlined,
+        selectedIcon: Icons.home_rounded,
         label: 'Home',
       ),
       if (controller.isAdmin)
@@ -42,7 +42,7 @@ class ShellScreen extends ConsumerWidget {
         branchIndex: 4,
         icon: Icons.tips_and_updates_outlined,
         selectedIcon: Icons.tips_and_updates,
-        label: 'Tips',
+        label: 'Teaching',
       ),
       const _NavItem(
         branchIndex: 5,

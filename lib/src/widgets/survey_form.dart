@@ -108,25 +108,39 @@ class _SurveyFieldInput extends StatelessWidget {
       ),
       SurveyFieldType.multiSelect => _SurveyMultiSelectField(
         label: field.label,
+        path: path,
         values: _stringSet(value),
         options: field.options,
         onChanged: (nextValue) =>
             onChanged(field.key, nextValue.toList()..sort()),
       ),
-      SurveyFieldType.boolean => CheckboxListTile(
-        contentPadding: EdgeInsets.zero,
+      SurveyFieldType.boolean => _SurveyCheckboxField(
+        label: field.label,
         value: value == true,
-        onChanged: (nextValue) => onChanged(field.key, nextValue ?? false),
-        title: Text(field.label),
-        controlAffinity: ListTileControlAffinity.leading,
+        onChanged: (nextValue) => onChanged(field.key, nextValue),
       ),
-      SurveyFieldType.repeatableTable => _SurveyRepeatableTable(
-        field: field,
-        rows: _rowList(value),
-        onChanged: (rows) => onChanged(field.key, rows),
-        path: path,
-      ),
+      SurveyFieldType.repeatableTable =>
+        field.key == 'income_earners'
+            ? _SurveyIncomeEarnersField(
+                field: field,
+                rows: normalizedIncomeEarnerRows(value),
+                familyRows: surveyMapRows(data['family_members']),
+                onChanged: (rows) {
+                  onChanged(field.key, rows);
+                  onChanged(
+                    'income_earner_count',
+                    incomeEarnerCountFromRows(rows),
+                  );
+                },
+              )
+            : _SurveyRepeatableTable(
+                field: field,
+                rows: _rowList(value),
+                onChanged: (rows) => onChanged(field.key, rows),
+                path: path,
+              ),
       SurveyFieldType.note => _SurveyNote(field: field),
+      SurveyFieldType.heading => _SurveyHeading(label: field.label),
     };
   }
 
@@ -216,18 +230,28 @@ class _SurveyTextFieldState extends State<_SurveyTextField> {
 
   @override
   Widget build(BuildContext context) {
-    return TextFormField(
-      controller: _controller,
-      keyboardType: widget.keyboardType,
-      minLines: widget.minLines,
-      maxLines: widget.maxLines,
-      readOnly: widget.readOnly,
-      onTap: widget.onTap,
-      onChanged: widget.onChanged,
-      decoration: InputDecoration(
-        labelText: widget.label,
-        alignLabelWithHint: (widget.minLines ?? 1) > 1,
-        suffixIcon: widget.suffixIcon == null ? null : Icon(widget.suffixIcon),
+    final useExternalLabel = _usesExternalSurveyLabel(widget.label);
+
+    return _SurveyLabeledControl(
+      label: widget.label,
+      useExternalLabel: useExternalLabel,
+      child: TextFormField(
+        controller: _controller,
+        keyboardType: widget.keyboardType,
+        minLines: widget.minLines,
+        maxLines: widget.maxLines,
+        readOnly: widget.readOnly,
+        onTap: widget.onTap,
+        onChanged: widget.onChanged,
+        decoration: _surveyInputDecoration(
+          widget.label,
+          alignLabelWithHint: (widget.minLines ?? 1) > 1,
+          suffixIcon: widget.suffixIcon == null
+              ? null
+              : Icon(widget.suffixIcon),
+          useExternalLabel: useExternalLabel,
+          hintText: widget.readOnly ? 'Select' : 'Enter response',
+        ),
       ),
     );
   }
@@ -254,24 +278,33 @@ class _SurveySelectField extends StatelessWidget {
     final currentValue = options.contains(normalizedValue)
         ? normalizedValue
         : null;
+    final useExternalLabel = _usesExternalSurveyLabel(label);
 
-    return DropdownButtonFormField<String>(
-      key: ValueKey('select.$path.$currentValue'),
-      initialValue: currentValue,
-      isExpanded: true,
-      decoration: InputDecoration(labelText: label),
-      items: [
-        for (final option in options)
-          DropdownMenuItem(
-            value: option,
-            child: Text(option, overflow: TextOverflow.ellipsis),
-          ),
-      ],
-      onChanged: (nextValue) {
-        if (nextValue != null) {
-          onChanged(nextValue);
-        }
-      },
+    return _SurveyLabeledControl(
+      label: label,
+      useExternalLabel: useExternalLabel,
+      child: DropdownButtonFormField<String>(
+        key: ValueKey('select.$path.$currentValue'),
+        initialValue: currentValue,
+        isExpanded: true,
+        decoration: _surveyInputDecoration(
+          label,
+          useExternalLabel: useExternalLabel,
+        ),
+        hint: useExternalLabel ? const Text('Select one') : null,
+        items: [
+          for (final option in options)
+            DropdownMenuItem(
+              value: option,
+              child: Text(option, overflow: TextOverflow.ellipsis),
+            ),
+        ],
+        onChanged: (nextValue) {
+          if (nextValue != null) {
+            onChanged(nextValue);
+          }
+        },
+      ),
     );
   }
 }
@@ -279,40 +312,408 @@ class _SurveySelectField extends StatelessWidget {
 class _SurveyMultiSelectField extends StatelessWidget {
   const _SurveyMultiSelectField({
     required this.label,
+    required this.path,
     required this.values,
     required this.options,
     required this.onChanged,
   });
 
   final String label;
+  final String path;
   final Set<String> values;
   final List<String> options;
   final ValueChanged<Set<String>> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: Theme.of(context).textTheme.labelLarge),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final option in options)
-              FilterChip(
-                label: Text(option),
-                selected: values.contains(option),
-                onSelected: (selected) {
-                  final nextValues = values.toSet();
-                  selected ? nextValues.add(option) : nextValues.remove(option);
-                  onChanged(nextValues);
-                },
+    final selectedText = values.isEmpty ? 'None selected' : values.join(', ');
+    final selectedStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      color: values.isEmpty ? KasudloColors.muted : KasudloColors.text,
+    );
+    final useExternalLabel = _usesExternalSurveyLabel(label);
+
+    return _SurveyLabeledControl(
+      label: label,
+      useExternalLabel: useExternalLabel,
+      child: InkWell(
+        key: ValueKey('multi.$path'),
+        borderRadius: BorderRadius.circular(6),
+        onTap: () => _showChecklist(context),
+        child: InputDecorator(
+          decoration: _surveyInputDecoration(
+            label,
+            suffixIcon: const Icon(Icons.arrow_drop_down),
+            useExternalLabel: useExternalLabel,
+          ),
+          isEmpty: values.isEmpty,
+          child: Text(
+            selectedText,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: selectedStyle,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showChecklist(BuildContext context) async {
+    final nextValues = values.toSet();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 8, 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              label,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: nextValues.isEmpty
+                                ? null
+                                : () {
+                                    setSheetState(nextValues.clear);
+                                    onChanged(nextValues);
+                                  },
+                            child: const Text('Clear'),
+                          ),
+                          IconButton(
+                            tooltip: 'Close',
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: [
+                          for (final option in options)
+                            CheckboxListTile(
+                              value: nextValues.contains(option),
+                              title: Text(option),
+                              controlAffinity: ListTileControlAffinity.leading,
+                              onChanged: (selected) {
+                                setSheetState(() {
+                                  if (selected ?? false) {
+                                    nextValues.add(option);
+                                  } else {
+                                    nextValues.remove(option);
+                                  }
+                                });
+                                onChanged(nextValues);
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Done'),
+                      ),
+                    ),
+                  ],
+                ),
               ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _SurveyCheckboxField extends StatelessWidget {
+  const _SurveyCheckboxField({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SurveyRowContainer(
+      padding: EdgeInsets.zero,
+      child: CheckboxListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+        value: value,
+        onChanged: (nextValue) => onChanged(nextValue ?? false),
+        title: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+        controlAffinity: ListTileControlAffinity.leading,
+        dense: true,
+        visualDensity: VisualDensity.compact,
+      ),
+    );
+  }
+}
+
+class _SurveyLabeledControl extends StatelessWidget {
+  const _SurveyLabeledControl({
+    required this.label,
+    required this.useExternalLabel,
+    required this.child,
+  });
+
+  final String label;
+  final bool useExternalLabel;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!useExternalLabel) {
+      return child;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: KasudloColors.muted,
+            height: 1.35,
+          ),
+        ),
+        const SizedBox(height: 6),
+        child,
+      ],
+    );
+  }
+}
+
+class _SurveyRowContainer extends StatelessWidget {
+  const _SurveyRowContainer({
+    required this.child,
+    this.padding = EdgeInsets.zero,
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(6),
+        side: const BorderSide(color: KasudloColors.border),
+      ),
+      child: Padding(padding: padding, child: child),
+    );
+  }
+}
+
+class _SurveyIncomeEarnersField extends StatelessWidget {
+  const _SurveyIncomeEarnersField({
+    required this.field,
+    required this.rows,
+    required this.familyRows,
+    required this.onChanged,
+  });
+
+  final SurveyField field;
+  final List<Map<String, dynamic>> rows;
+  final List<Map<String, dynamic>> familyRows;
+  final ValueChanged<List<Map<String, dynamic>>> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxRows = field.maxRows;
+    final canAdd = maxRows == null || rows.length < maxRows;
+    final count = incomeEarnerCountFromRows(rows);
+    final memberChoices = _incomeEarnerMemberChoices(familyRows);
+
+    return Column(
+      key: const ValueKey('income_earners_editor'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                field.label,
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ),
+            Text(
+              '$count${maxRows == null ? '' : '/$maxRows'}',
+              style: Theme.of(
+                context,
+              ).textTheme.labelMedium?.copyWith(color: KasudloColors.muted),
+            ),
           ],
         ),
+        const SizedBox(height: 4),
+        Text(
+          'Select from the family members already entered.',
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: KasudloColors.muted),
+        ),
+        const SizedBox(height: 8),
+        if (rows.isEmpty)
+          Text(
+            'No income earners added yet.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: KasudloColors.muted),
+          ),
+        for (var index = 0; index < rows.length; index++) ...[
+          if (index > 0) const SizedBox(height: 10),
+          _IncomeEarnerRowEditor(
+            index: index,
+            row: rows[index],
+            memberChoices: memberChoices,
+            onChanged: (row) => _updateRow(index, row),
+            onRemove: () => _removeRow(index),
+          ),
+        ],
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: canAdd ? _addRow : null,
+          icon: const Icon(Icons.add),
+          label: Text(field.addButtonLabel ?? 'Add Income Earner'),
+        ),
       ],
+    );
+  }
+
+  void _addRow() {
+    onChanged(normalizedIncomeEarnerRows([...rows, <String, dynamic>{}]));
+  }
+
+  void _removeRow(int index) {
+    final nextRows = [
+      for (var rowIndex = 0; rowIndex < rows.length; rowIndex++)
+        if (rowIndex != index) Map<String, dynamic>.from(rows[rowIndex]),
+    ];
+    onChanged(normalizedIncomeEarnerRows(nextRows));
+  }
+
+  void _updateRow(int index, Map<String, dynamic> row) {
+    final nextRows = [for (final item in rows) Map<String, dynamic>.from(item)];
+    nextRows[index] = row;
+    onChanged(normalizedIncomeEarnerRows(nextRows));
+  }
+}
+
+class _IncomeEarnerRowEditor extends StatelessWidget {
+  const _IncomeEarnerRowEditor({
+    required this.index,
+    required this.row,
+    required this.memberChoices,
+    required this.onChanged,
+    required this.onRemove,
+  });
+
+  final int index;
+  final Map<String, dynamic> row;
+  final List<_IncomeEarnerMemberChoice> memberChoices;
+  final ValueChanged<Map<String, dynamic>> onChanged;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedMemberNo = _stringValue(row['family_member_no']);
+    final currentMemberNo =
+        memberChoices.any((choice) => choice.memberNo == selectedMemberNo)
+        ? selectedMemberNo
+        : null;
+
+    return _SurveyRowContainer(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Earner ${index + 1}',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Remove income earner',
+                  onPressed: onRemove,
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            DropdownButtonFormField<String>(
+              key: ValueKey('income_earner_member_$index.$currentMemberNo'),
+              initialValue: currentMemberNo,
+              isExpanded: true,
+              decoration: _surveyInputDecoration('Income earner'),
+              items: [
+                for (final choice in memberChoices)
+                  DropdownMenuItem(
+                    value: choice.memberNo,
+                    child: Text(choice.label, overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              onChanged: memberChoices.isEmpty
+                  ? null
+                  : (memberNo) {
+                      if (memberNo == null) {
+                        return;
+                      }
+                      final choice = memberChoices.firstWhere(
+                        (item) => item.memberNo == memberNo,
+                      );
+                      onChanged({
+                        ...row,
+                        'family_member_no': choice.memberNo,
+                        'family_member_name': choice.name,
+                        'family_position': choice.relationship,
+                      });
+                    },
+            ),
+            const SizedBox(height: 12),
+            _SurveyTextField(
+              value: _stringValue(row['family_position']),
+              label: 'Family position',
+              onChanged: (value) =>
+                  onChanged({...row, 'family_position': value}),
+            ),
+            const SizedBox(height: 12),
+            _SurveyTextField(
+              value: _stringValue(row['income_php']),
+              label: 'Income PHP',
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              onChanged: (value) => onChanged({...row, 'income_php': value}),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -361,11 +762,7 @@ class _SurveyRepeatableTable extends StatelessWidget {
           ),
         for (var index = 0; index < rows.length; index++) ...[
           if (index > 0) const SizedBox(height: 10),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border.all(color: KasudloColors.border),
-              borderRadius: BorderRadius.circular(6),
-            ),
+          _SurveyRowContainer(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
               child: Column(
@@ -429,8 +826,23 @@ class _SurveyRepeatableTable extends StatelessWidget {
   void _updateRow(int index, String key, Object? value) {
     final nextRows = [for (final row in rows) Map<String, dynamic>.from(row)];
     nextRows[index][key] = value;
+    if (field.key == 'anthropometric_data_under_5' &&
+        (key == 'weight_kg' || key == 'height_m')) {
+      _updateCalculatedBmi(nextRows[index]);
+    }
     onChanged(nextRows);
   }
+}
+
+void _updateCalculatedBmi(Map<String, dynamic> row) {
+  final weightKg = _parseDecimal(row['weight_kg']);
+  final heightM = _parseDecimal(row['height_m']);
+  if (weightKg == null || heightM == null || heightM <= 0) {
+    row.remove('bmi');
+    return;
+  }
+
+  row['bmi'] = _formatCalculatedNumber(weightKg / (heightM * heightM));
 }
 
 class _SurveyNote extends StatelessWidget {
@@ -463,11 +875,87 @@ class _SurveyNote extends StatelessWidget {
   }
 }
 
+class _SurveyHeading extends StatelessWidget {
+  const _SurveyHeading({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, bottom: 2),
+      child: Text(
+        label.toUpperCase(),
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _IncomeEarnerMemberChoice {
+  const _IncomeEarnerMemberChoice({
+    required this.memberNo,
+    required this.name,
+    required this.relationship,
+  });
+
+  final String memberNo;
+  final String name;
+  final String relationship;
+
+  String get label {
+    final displayName = name.isEmpty ? 'Member $memberNo' : name;
+    if (relationship.isEmpty) {
+      return '$memberNo - $displayName';
+    }
+    return '$memberNo - $displayName ($relationship)';
+  }
+}
+
 String _stringValue(Object? value) {
   if (value == null) {
     return '';
   }
   return '$value';
+}
+
+InputDecoration _surveyInputDecoration(
+  String label, {
+  Widget? suffixIcon,
+  bool alignLabelWithHint = false,
+  bool useExternalLabel = false,
+  String? hintText,
+}) {
+  return InputDecoration(
+    labelText: useExternalLabel ? null : label,
+    hintText: useExternalLabel ? hintText : null,
+    alignLabelWithHint: alignLabelWithHint,
+    suffixIcon: suffixIcon,
+  );
+}
+
+bool _usesExternalSurveyLabel(String label) => label.trim().length > 22;
+
+double? _parseDecimal(Object? value) {
+  if (value is num) {
+    return value.toDouble();
+  }
+  final text = _stringValue(value).trim().replaceAll(',', '');
+  if (text.isEmpty) {
+    return null;
+  }
+  return double.tryParse(text);
+}
+
+String _formatCalculatedNumber(double value) {
+  final fixed = value.toStringAsFixed(2);
+  if (!fixed.contains('.')) {
+    return fixed;
+  }
+  return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
 }
 
 Set<String> _stringSet(Object? value) {
@@ -493,6 +981,21 @@ List<Map<String, dynamic>> _rowList(Object? value) {
 
 bool _isNumberingField(String key) =>
     key == 'member_no' || key == 'earner_no' || key.endsWith('_no');
+
+List<_IncomeEarnerMemberChoice> _incomeEarnerMemberChoices(
+  List<Map<String, dynamic>> rows,
+) {
+  return [
+    for (var index = 0; index < rows.length; index++)
+      _IncomeEarnerMemberChoice(
+        memberNo: _stringValue(rows[index]['member_no']).trim().isEmpty
+            ? '${index + 1}'
+            : _stringValue(rows[index]['member_no']).trim(),
+        name: _stringValue(rows[index]['name_of_family_member']).trim(),
+        relationship: _stringValue(rows[index]['relationship_to_head']).trim(),
+      ),
+  ];
+}
 
 TimeOfDay? _parseTimeOfDay(String value) {
   final parts = value.split(':');

@@ -182,6 +182,13 @@ class AiCareSuggestion {
         reason: (json['reason'] as String?) ?? '',
         locationHint: (json['location_hint'] as String?) ?? '',
       );
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'type': type,
+    'reason': reason,
+    'location_hint': locationHint,
+  };
 }
 
 class AiHealthGuidance {
@@ -221,6 +228,19 @@ class AiHealthGuidance {
         (json['disclaimer'] as String?) ??
         'AI guidance supports field triage and does not replace clinical judgment.',
   );
+
+  Map<String, dynamic> toJson() => {
+    'risk_level': riskLevel,
+    'summary': summary,
+    'concerning_findings': concerningFindings,
+    'recommended_actions': recommendedActions,
+    'follow_up_questions': followUpQuestions,
+    'care_suggestions': careSuggestions
+        .map((suggestion) => suggestion.toJson())
+        .toList(),
+    'emergency_warning': emergencyWarning,
+    'disclaimer': disclaimer,
+  };
 }
 
 class HealthTip {
@@ -348,6 +368,31 @@ class FamilyMember {
     'details': details,
   };
 
+  Map<String, dynamic> toSurveyJson() {
+    final surveyDetails = Map<String, dynamic>.from(details)
+      ..remove('name')
+      ..remove('relationship');
+
+    surveyDetails['name_of_family_member'] =
+        '${details['name_of_family_member'] ?? name}'.trim();
+    if (age != null) {
+      surveyDetails['age'] = age;
+    }
+    surveyDetails['relationship_to_head'] =
+        '${details['relationship_to_head'] ?? relationship}'.trim();
+    if (healthProblems.isNotEmpty) {
+      surveyDetails['health_problems'] = healthProblems;
+    }
+    if (vaccinationStatus.trim().isNotEmpty) {
+      surveyDetails['vaccination_status'] = vaccinationStatus;
+    }
+    if (nutritionalStatus.trim().isNotEmpty) {
+      surveyDetails['nutritional_status'] = nutritionalStatus;
+    }
+
+    return surveyDetails;
+  }
+
   factory FamilyMember.fromJson(Map<String, dynamic> json) => FamilyMember(
     name:
         (json['name'] as String?) ??
@@ -430,6 +475,7 @@ class HealthSubmission {
     this.updatedAt,
     this.remoteUpdatedAt,
     this.editHistory = const [],
+    this.aiGuidance,
     this.lastError,
   });
 
@@ -452,6 +498,7 @@ class HealthSubmission {
   final DateTime? updatedAt;
   final DateTime? remoteUpdatedAt;
   final List<ReportEditHistoryEntry> editHistory;
+  final AiHealthGuidance? aiGuidance;
   final String? lastError;
 
   DateTime get effectiveUpdatedAt => updatedAt ?? createdAt;
@@ -475,6 +522,7 @@ class HealthSubmission {
     Object? updatedAt = _unchanged,
     Object? remoteUpdatedAt = _unchanged,
     List<ReportEditHistoryEntry>? editHistory,
+    Object? aiGuidance = _unchanged,
     Object? lastError = _unchanged,
   }) => HealthSubmission(
     clientSubmissionId: clientSubmissionId,
@@ -502,6 +550,9 @@ class HealthSubmission {
         ? this.remoteUpdatedAt
         : remoteUpdatedAt as DateTime?,
     editHistory: editHistory ?? this.editHistory,
+    aiGuidance: identical(aiGuidance, _unchanged)
+        ? this.aiGuidance
+        : aiGuidance as AiHealthGuidance?,
     lastError: identical(lastError, _unchanged)
         ? this.lastError
         : lastError as String?,
@@ -522,7 +573,7 @@ class HealthSubmission {
       changes: changes,
     );
 
-    return copyWith(editHistory: [...previous.editHistory, entry]);
+    return copyWith(editHistory: [...editHistory, entry]);
   }
 
   Map<String, dynamic> toJson() => {
@@ -545,6 +596,7 @@ class HealthSubmission {
     'updated_at': effectiveUpdatedAt.toIso8601String(),
     'remote_updated_at': remoteUpdatedAt?.toIso8601String(),
     'edit_history': editHistory.map((entry) => entry.toJson()).toList(),
+    'ai_health_guidance': aiGuidance?.toJson(),
     'last_error': lastError,
   };
 
@@ -557,7 +609,7 @@ class HealthSubmission {
       'family_members_count': familyMembersCount,
       'family_members':
           surveyData['family_members'] ??
-          familyMembers.map((member) => member.toJson()).toList(),
+          familyMembers.map((member) => member.toSurveyJson()).toList(),
       'health_problems': healthProblems,
       'vaccination_status': vaccinationStatus,
       'water_sanitation': waterSanitation,
@@ -566,6 +618,7 @@ class HealthSubmission {
       'consent_given': consentGiven,
       'notes': notes,
       'edit_history': editHistory.map((entry) => entry.toJson()).toList(),
+      'ai_health_guidance': aiGuidance?.toJson(),
       'client_updated_at': effectiveUpdatedAt.toIso8601String(),
     };
     payload['survey_data'] = surveyData;
@@ -605,6 +658,7 @@ class HealthSubmission {
       ),
       remoteUpdatedAt: _dateTimeValue(json['remote_updated_at']),
       editHistory: _editHistoryList(json['edit_history']),
+      aiGuidance: _aiGuidanceFromJson(json, payload, surveyData),
       lastError: json['last_error'] as String?,
     );
   }
@@ -639,7 +693,8 @@ class HealthSubmission {
         _dynamicValuesEqual(
           editHistory.map((entry) => entry.toJson()).toList(),
           other.editHistory.map((entry) => entry.toJson()).toList(),
-        );
+        ) &&
+        _dynamicValuesEqual(aiGuidance?.toJson(), other.aiGuidance?.toJson());
   }
 }
 
@@ -661,7 +716,7 @@ List<String> reportEditChanges({
     );
   }
 
-  addValueChange('Name', previous.respondentName, next.respondentName);
+  addValueChange('Informant', previous.respondentName, next.respondentName);
   addValueChange('Age', previous.respondentAge, next.respondentAge);
   addValueChange('Address', previous.address, next.address);
   addValueChange(
@@ -702,6 +757,16 @@ List<String> reportEditChanges({
   addValueChange('Notes', previous.notes, next.notes);
 
   return changes;
+}
+
+bool reportEditHistoryEquals(
+  List<ReportEditHistoryEntry> first,
+  List<ReportEditHistoryEntry> second,
+) {
+  return _dynamicValuesEqual(
+    first.map((entry) => entry.toJson()).toList(),
+    second.map((entry) => entry.toJson()).toList(),
+  );
 }
 
 Map<String, dynamic> _historySurveyData(HealthSubmission submission) {
@@ -893,6 +958,22 @@ String? _clientUpdatedAtFromPayload(Map<String, dynamic> json) {
 
 List<ReportEditHistoryEntry> _editHistoryList(Object? value) {
   return _mapList(value).map(ReportEditHistoryEntry.fromJson).toList();
+}
+
+AiHealthGuidance? _aiGuidanceFromJson(
+  Map<String, dynamic> json,
+  Map<String, dynamic> payload,
+  Map<String, dynamic> surveyData,
+) {
+  final guidance = _dynamicMap(
+    json['ai_health_guidance'] ??
+        payload['ai_health_guidance'] ??
+        surveyData['ai_health_guidance'],
+  );
+  if (guidance.isEmpty) {
+    return null;
+  }
+  return AiHealthGuidance.fromJson(guidance);
 }
 
 bool _historyValuesEqual(Object? first, Object? second) {
