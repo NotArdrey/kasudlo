@@ -188,4 +188,82 @@ void main() {
     expect(summary.vaccinationStatuses['Complete'], 1);
     expect(summary.waterSanitationStatuses['Unsafe water source'], 1);
   });
+
+  test('offline pending submissions survive remote refresh until synced', () {
+    final controller = AppController();
+    final local = _submission(
+      id: 'same-record',
+      respondentName: 'Offline Edit',
+      syncStatus: SyncStatus.pending,
+      updatedAt: DateTime.utc(2026, 5, 24, 10),
+      remoteUpdatedAt: DateTime.utc(2026, 5, 24, 8),
+    );
+    final remote = _submission(
+      id: 'same-record',
+      respondentName: 'Remote Old',
+      syncStatus: SyncStatus.synced,
+      updatedAt: DateTime.utc(2026, 5, 24, 8),
+      remoteUpdatedAt: DateTime.utc(2026, 5, 24, 8),
+    );
+    controller.submissions = [local];
+
+    final merged = controller.debugMergeRemoteSubmissions([remote]).toList();
+
+    expect(merged, hasLength(1));
+    expect(merged.single.respondentName, 'Offline Edit');
+    expect(merged.single.syncStatus, SyncStatus.pending);
+  });
+
+  test('newer remote changes hold offline edits as conflicts', () {
+    final controller = AppController();
+    final local = _submission(
+      id: 'same-record',
+      respondentName: 'Offline Edit',
+      syncStatus: SyncStatus.pending,
+      updatedAt: DateTime.utc(2026, 5, 24, 9),
+      remoteUpdatedAt: DateTime.utc(2026, 5, 24, 8),
+    );
+    final remote = _submission(
+      id: 'same-record',
+      respondentName: 'Remote New',
+      syncStatus: SyncStatus.synced,
+      updatedAt: DateTime.utc(2026, 5, 24, 10),
+      remoteUpdatedAt: DateTime.utc(2026, 5, 24, 10),
+    );
+    controller.submissions = [local];
+
+    final merged = controller.debugMergeRemoteSubmissions([remote]).toList();
+
+    expect(merged.single.respondentName, 'Offline Edit');
+    expect(merged.single.syncStatus, SyncStatus.conflict);
+    expect(merged.single.lastError, contains('Supabase has a newer version'));
+  });
+}
+
+HealthSubmission _submission({
+  required String id,
+  required String respondentName,
+  required SyncStatus syncStatus,
+  required DateTime updatedAt,
+  DateTime? remoteUpdatedAt,
+}) {
+  return HealthSubmission(
+    clientSubmissionId: id,
+    respondentName: respondentName,
+    respondentAge: 34,
+    address: 'Barangay 1',
+    familyMembersCount: 4,
+    familyMembers: const [],
+    healthProblems: const ['Hypertension'],
+    vaccinationStatus: 'Complete',
+    waterSanitation: 'Safe water and sanitary toilet',
+    nutritionalStatus: 'Normal',
+    communityConcerns: const ['Dengue risk'],
+    consentGiven: true,
+    notes: '',
+    createdAt: DateTime.utc(2026, 5, 23),
+    syncStatus: syncStatus,
+    updatedAt: updatedAt,
+    remoteUpdatedAt: remoteUpdatedAt,
+  );
 }

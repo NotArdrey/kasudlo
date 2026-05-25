@@ -630,6 +630,11 @@ List<Widget> _reportDetailGroups(HealthSubmission submission) {
       value: _formatReportDateTime(submission.createdAt),
     ),
     _ReportDetailRow(label: 'Sync status', value: submission.syncStatus.name),
+    if ((submission.lastError ?? '').trim().isNotEmpty)
+      _ReportDetailRow(
+        label: 'Sync note',
+        value: _displayValue(submission.lastError ?? ''),
+      ),
   ]);
 
   return groups;

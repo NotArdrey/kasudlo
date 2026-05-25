@@ -40,6 +40,12 @@ class ShellScreen extends ConsumerWidget {
       ),
       const _NavItem(
         branchIndex: 4,
+        icon: Icons.tips_and_updates_outlined,
+        selectedIcon: Icons.tips_and_updates,
+        label: 'Tips',
+      ),
+      const _NavItem(
+        branchIndex: 5,
         icon: Icons.settings_outlined,
         selectedIcon: Icons.settings,
         label: 'Settings',

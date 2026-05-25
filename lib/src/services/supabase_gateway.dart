@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config.dart';
@@ -5,8 +9,28 @@ import '../models.dart';
 
 class SupabaseGateway {
   static bool _initialized = false;
+  static const _assessmentSelect =
+      'client_submission_id, respondent_name, respondent_age, address, '
+      'family_members_count, family_members, health_problems, '
+      'vaccination_status, water_sanitation, nutritional_status, '
+      'community_concerns, consent_given, notes, edit_history, payload, '
+      'created_at, submitted_at, updated_at';
+  static const _healthTipSelect =
+      'id, title, description, file_name, mime_type, file_size, '
+      'attachment_base64, created_by_email, created_at, updated_at';
+  static bool _isPasswordRecoverySession = false;
+  static bool _initialAuthLinkHandled = false;
+  static final _appLinks = AppLinks();
+  static final _handledAuthCallbackUrls = <String>{};
+  static final _passwordRecoveryController =
+      StreamController<String?>.broadcast();
+  static StreamSubscription<AuthState>? _authStateSubscription;
+  static StreamSubscription<Uri>? _authLinkSubscription;
 
   static bool get isConfigured => AppConfig.hasSupabase;
+  static bool get isPasswordRecoverySession => _isPasswordRecoverySession;
+  static Stream<String?> get passwordRecoveryStream =>
+      _passwordRecoveryController.stream;
 
   static SupabaseClient? get client {
     if (!isConfigured || !_initialized) {
@@ -25,8 +49,11 @@ class SupabaseGateway {
     await Supabase.initialize(
       url: AppConfig.supabaseUrl,
       anonKey: AppConfig.supabasePublishableKey,
+      authOptions: const FlutterAuthClientOptions(detectSessionInUri: false),
     );
     _initialized = true;
+    _startPasswordRecoveryWatcher();
+    await _startAuthLinkHandling();
   }
 
   static Future<void> signIn({
@@ -38,6 +65,31 @@ class SupabaseGateway {
       return;
     }
     await supabase.auth.signInWithPassword(email: email, password: password);
+  }
+
+  static Future<void> requestPasswordResetEmail({required String email}) async {
+    final supabase = client;
+    if (supabase == null) {
+      throw StateError('Supabase is not configured.');
+    }
+
+    await supabase.auth.resetPasswordForEmail(
+      email.trim(),
+      redirectTo: kIsWeb ? null : AppConfig.passwordResetRedirectUrl,
+    );
+  }
+
+  static Future<void> updatePassword({required String password}) async {
+    final supabase = client;
+    if (supabase == null) {
+      throw StateError('Supabase is not configured.');
+    }
+
+    await supabase.auth.updateUser(UserAttributes(password: password));
+  }
+
+  static void clearPasswordRecoverySession() {
+    _isPasswordRecoverySession = false;
   }
 
   static Future<UserProfile?> currentProfile() async {
@@ -133,9 +185,12 @@ class SupabaseGateway {
 
   static Future<void> signOut() async {
     await client?.auth.signOut();
+    clearPasswordRecoverySession();
   }
 
-  static Future<void> submitAssessment(HealthSubmission submission) async {
+  static Future<HealthSubmission?> submitAssessment(
+    HealthSubmission submission,
+  ) async {
     final supabase = client;
     if (supabase == null) {
       throw StateError('Supabase is not configured.');
@@ -148,6 +203,8 @@ class SupabaseGateway {
         'p_client_submission_id': submission.clientSubmissionId,
       },
     );
+
+    return fetchAssessment(submission.clientSubmissionId);
   }
 
   static Future<AiHealthGuidance> analyzeAssessment(
@@ -189,6 +246,52 @@ class SupabaseGateway {
     );
   }
 
+  static Future<List<HealthTip>> listHealthTips() async {
+    final supabase = client;
+    if (supabase == null) {
+      throw StateError('Supabase is not configured.');
+    }
+
+    final data = await supabase
+        .from('health_tips')
+        .select(_healthTipSelect)
+        .order('updated_at', ascending: false);
+
+    return data
+        .whereType<Map>()
+        .map((item) => HealthTip.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  static Future<HealthTip> upsertHealthTip(HealthTip healthTip) async {
+    final supabase = client;
+    final user = currentUser;
+    if (supabase == null || user == null) {
+      throw StateError('Supabase is not configured.');
+    }
+
+    final data = await supabase
+        .from('health_tips')
+        .upsert({
+          ...healthTip.toJson(),
+          'created_by': user.id,
+          'created_by_email': user.email ?? healthTip.createdByEmail,
+        }, onConflict: 'id')
+        .select(_healthTipSelect)
+        .single();
+
+    return HealthTip.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  static Future<void> deleteHealthTip(String id) async {
+    final supabase = client;
+    if (supabase == null) {
+      throw StateError('Supabase is not configured.');
+    }
+
+    await supabase.from('health_tips').delete().eq('id', id);
+  }
+
   static Future<List<HealthSubmission>> listAssessments() async {
     final supabase = client;
     if (supabase == null) {
@@ -197,13 +300,7 @@ class SupabaseGateway {
 
     final data = await supabase
         .from('household_assessments')
-        .select(
-          'client_submission_id, respondent_name, respondent_age, address, '
-          'family_members_count, family_members, health_problems, '
-          'vaccination_status, water_sanitation, nutritional_status, '
-          'community_concerns, consent_given, notes, edit_history, payload, '
-          'created_at, submitted_at',
-        )
+        .select(_assessmentSelect)
         .order('created_at', ascending: false);
 
     return data
@@ -213,6 +310,29 @@ class SupabaseGateway {
               HealthSubmission.fromRemoteJson(Map<String, dynamic>.from(item)),
         )
         .toList();
+  }
+
+  static Future<HealthSubmission?> fetchAssessment(
+    String clientSubmissionId,
+  ) async {
+    final supabase = client;
+    final user = currentUser;
+    if (supabase == null || user == null) {
+      throw StateError('Supabase is not configured.');
+    }
+
+    final data = await supabase
+        .from('household_assessments')
+        .select(_assessmentSelect)
+        .eq('user_id', user.id)
+        .eq('client_submission_id', clientSubmissionId)
+        .maybeSingle();
+
+    if (data == null) {
+      return null;
+    }
+
+    return HealthSubmission.fromRemoteJson(Map<String, dynamic>.from(data));
   }
 
   static Future<Map<String, dynamic>> _invokeAdminUsers(
@@ -260,5 +380,89 @@ class SupabaseGateway {
       return data;
     }
     return 'Admin action failed.';
+  }
+
+  static void _startPasswordRecoveryWatcher() {
+    final supabase = client;
+    if (supabase == null || _authStateSubscription != null) {
+      return;
+    }
+
+    _authStateSubscription = supabase.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.passwordRecovery) {
+        _markPasswordRecovery(data.session?.user.email);
+      } else if (data.event == AuthChangeEvent.signedOut) {
+        clearPasswordRecoverySession();
+      }
+    });
+  }
+
+  static Future<void> _startAuthLinkHandling() async {
+    await _handleInitialAuthLink();
+
+    _authLinkSubscription ??= _appLinks.uriLinkStream.listen(
+      (uri) => unawaited(_handleAuthCallback(uri)),
+      onError: (Object error, StackTrace stackTrace) {
+        if (kDebugMode) {
+          debugPrint('Unable to receive auth link: $error');
+        }
+      },
+    );
+  }
+
+  static Future<void> _handleInitialAuthLink() async {
+    if (_initialAuthLinkHandled) {
+      return;
+    }
+    _initialAuthLinkHandled = true;
+
+    try {
+      final uri = await _appLinks.getInitialLink();
+      if (uri != null) {
+        await _handleAuthCallback(uri);
+      }
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Unable to handle initial auth link: $error');
+      }
+    }
+  }
+
+  static Future<void> _handleAuthCallback(Uri uri) async {
+    final supabase = client;
+    if (supabase == null || !_isAuthCallbackUri(uri)) {
+      return;
+    }
+
+    final cacheKey = uri.toString();
+    if (!_handledAuthCallbackUrls.add(cacheKey)) {
+      return;
+    }
+
+    try {
+      final response = await supabase.auth.getSessionFromUrl(uri);
+      if (response.redirectType == AuthChangeEvent.passwordRecovery.name ||
+          response.redirectType == 'recovery') {
+        _markPasswordRecovery(response.session.user.email);
+      }
+    } catch (error) {
+      _handledAuthCallbackUrls.remove(cacheKey);
+      if (kDebugMode) {
+        debugPrint('Unable to handle auth callback: $error');
+      }
+    }
+  }
+
+  static bool _isAuthCallbackUri(Uri uri) {
+    return uri.queryParameters.containsKey('code') ||
+        uri.queryParameters.containsKey('access_token') ||
+        uri.queryParameters.containsKey('error_description') ||
+        uri.fragment.contains('access_token') ||
+        uri.fragment.contains('error_description');
+  }
+
+  static void _markPasswordRecovery(String? email) {
+    _isPasswordRecoverySession = true;
+    _passwordRecoveryController.add(email ?? currentUser?.email);
   }
 }

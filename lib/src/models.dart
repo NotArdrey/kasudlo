@@ -1,4 +1,4 @@
-enum SyncStatus { draft, pending, syncing, synced, failed }
+enum SyncStatus { draft, pending, syncing, synced, failed, conflict }
 
 enum AccountRole { worker, patient, admin }
 
@@ -223,6 +223,102 @@ class AiHealthGuidance {
   );
 }
 
+class HealthTip {
+  const HealthTip({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.fileName,
+    required this.mimeType,
+    required this.fileSize,
+    required this.attachmentBase64,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdByEmail = '',
+  });
+
+  final String id;
+  final String title;
+  final String description;
+  final String fileName;
+  final String mimeType;
+  final int fileSize;
+  final String attachmentBase64;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String createdByEmail;
+
+  bool get hasAttachment =>
+      fileName.trim().isNotEmpty && attachmentBase64.trim().isNotEmpty;
+
+  bool get isImage {
+    final normalizedMime = mimeType.toLowerCase();
+    final normalizedName = fileName.toLowerCase();
+    return normalizedMime.startsWith('image/') ||
+        normalizedName.endsWith('.png') ||
+        normalizedName.endsWith('.jpg') ||
+        normalizedName.endsWith('.jpeg') ||
+        normalizedName.endsWith('.gif') ||
+        normalizedName.endsWith('.webp');
+  }
+
+  HealthTip copyWith({
+    String? title,
+    String? description,
+    String? fileName,
+    String? mimeType,
+    int? fileSize,
+    String? attachmentBase64,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? createdByEmail,
+  }) {
+    return HealthTip(
+      id: id,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      fileName: fileName ?? this.fileName,
+      mimeType: mimeType ?? this.mimeType,
+      fileSize: fileSize ?? this.fileSize,
+      attachmentBase64: attachmentBase64 ?? this.attachmentBase64,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdByEmail: createdByEmail ?? this.createdByEmail,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'description': description,
+    'file_name': fileName,
+    'mime_type': mimeType,
+    'file_size': fileSize,
+    'attachment_base64': attachmentBase64,
+    'created_by_email': createdByEmail,
+    'created_at': createdAt.toIso8601String(),
+    'updated_at': updatedAt.toIso8601String(),
+  };
+
+  factory HealthTip.fromJson(Map<String, dynamic> json) {
+    final createdAt =
+        _dateTimeValue(json['created_at']) ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+    return HealthTip(
+      id: (json['id'] as String?) ?? '',
+      title: (json['title'] as String?) ?? '',
+      description: (json['description'] as String?) ?? '',
+      fileName: (json['file_name'] as String?) ?? '',
+      mimeType: (json['mime_type'] as String?) ?? '',
+      fileSize: _intValue(json['file_size']) ?? 0,
+      attachmentBase64: (json['attachment_base64'] as String?) ?? '',
+      createdByEmail: (json['created_by_email'] as String?) ?? '',
+      createdAt: createdAt,
+      updatedAt: _dateTimeValue(json['updated_at']) ?? createdAt,
+    );
+  }
+}
+
 class FamilyMember {
   const FamilyMember({
     required this.name,
@@ -331,6 +427,8 @@ class HealthSubmission {
     required this.notes,
     required this.createdAt,
     required this.syncStatus,
+    this.updatedAt,
+    this.remoteUpdatedAt,
     this.editHistory = const [],
     this.lastError,
   });
@@ -351,8 +449,12 @@ class HealthSubmission {
   final String notes;
   final DateTime createdAt;
   final SyncStatus syncStatus;
+  final DateTime? updatedAt;
+  final DateTime? remoteUpdatedAt;
   final List<ReportEditHistoryEntry> editHistory;
   final String? lastError;
+
+  DateTime get effectiveUpdatedAt => updatedAt ?? createdAt;
 
   HealthSubmission copyWith({
     String? respondentName,
@@ -370,6 +472,8 @@ class HealthSubmission {
     String? notes,
     DateTime? createdAt,
     SyncStatus? syncStatus,
+    Object? updatedAt = _unchanged,
+    Object? remoteUpdatedAt = _unchanged,
     List<ReportEditHistoryEntry>? editHistory,
     Object? lastError = _unchanged,
   }) => HealthSubmission(
@@ -391,6 +495,12 @@ class HealthSubmission {
     notes: notes ?? this.notes,
     createdAt: createdAt ?? this.createdAt,
     syncStatus: syncStatus ?? this.syncStatus,
+    updatedAt: identical(updatedAt, _unchanged)
+        ? this.updatedAt
+        : updatedAt as DateTime?,
+    remoteUpdatedAt: identical(remoteUpdatedAt, _unchanged)
+        ? this.remoteUpdatedAt
+        : remoteUpdatedAt as DateTime?,
     editHistory: editHistory ?? this.editHistory,
     lastError: identical(lastError, _unchanged)
         ? this.lastError
@@ -432,6 +542,8 @@ class HealthSubmission {
     'notes': notes,
     'created_at': createdAt.toIso8601String(),
     'sync_status': syncStatus.name,
+    'updated_at': effectiveUpdatedAt.toIso8601String(),
+    'remote_updated_at': remoteUpdatedAt?.toIso8601String(),
     'edit_history': editHistory.map((entry) => entry.toJson()).toList(),
     'last_error': lastError,
   };
@@ -454,6 +566,7 @@ class HealthSubmission {
       'consent_given': consentGiven,
       'notes': notes,
       'edit_history': editHistory.map((entry) => entry.toJson()).toList(),
+      'client_updated_at': effectiveUpdatedAt.toIso8601String(),
     };
     payload['survey_data'] = surveyData;
     return payload;
@@ -487,6 +600,10 @@ class HealthSubmission {
         (status) => status.name == json['sync_status'],
         orElse: () => SyncStatus.draft,
       ),
+      updatedAt: _dateTimeValue(
+        json['updated_at'] ?? json['client_updated_at'],
+      ),
+      remoteUpdatedAt: _dateTimeValue(json['remote_updated_at']),
       editHistory: _editHistoryList(json['edit_history']),
       lastError: json['last_error'] as String?,
     );
@@ -497,8 +614,33 @@ class HealthSubmission {
         ...json,
         'created_at': json['created_at'] ?? json['submitted_at'],
         'sync_status': SyncStatus.synced.name,
+        'updated_at': _clientUpdatedAtFromPayload(json) ?? json['updated_at'],
+        'remote_updated_at': json['updated_at'] ?? json['submitted_at'],
         'last_error': null,
       });
+
+  bool hasSameAssessmentContent(HealthSubmission other) {
+    return respondentName == other.respondentName &&
+        respondentAge == other.respondentAge &&
+        address == other.address &&
+        familyMembersCount == other.familyMembersCount &&
+        _dynamicValuesEqual(
+          familyMembers.map((member) => member.toJson()).toList(),
+          other.familyMembers.map((member) => member.toJson()).toList(),
+        ) &&
+        _stringListsEqual(healthProblems, other.healthProblems) &&
+        vaccinationStatus == other.vaccinationStatus &&
+        waterSanitation == other.waterSanitation &&
+        nutritionalStatus == other.nutritionalStatus &&
+        _stringListsEqual(communityConcerns, other.communityConcerns) &&
+        _dynamicValuesEqual(surveyData, other.surveyData) &&
+        consentGiven == other.consentGiven &&
+        notes == other.notes &&
+        _dynamicValuesEqual(
+          editHistory.map((entry) => entry.toJson()).toList(),
+          other.editHistory.map((entry) => entry.toJson()).toList(),
+        );
+  }
 }
 
 const _unchanged = Object();
@@ -645,6 +787,7 @@ class ReportSummary {
             (submission) =>
                 submission.syncStatus == SyncStatus.pending ||
                 submission.syncStatus == SyncStatus.failed ||
+                submission.syncStatus == SyncStatus.conflict ||
                 submission.syncStatus == SyncStatus.draft,
           )
           .length,
@@ -731,6 +874,21 @@ int? _intValue(Object? value) {
     return value.toInt();
   }
   return int.tryParse('${value ?? ''}');
+}
+
+DateTime? _dateTimeValue(Object? value) {
+  final text = '${value ?? ''}'.trim();
+  if (text.isEmpty) {
+    return null;
+  }
+  return DateTime.tryParse(text);
+}
+
+String? _clientUpdatedAtFromPayload(Map<String, dynamic> json) {
+  final payload = _dynamicMap(json['payload']);
+  final value = payload['client_updated_at'];
+  final text = '${value ?? ''}'.trim();
+  return text.isEmpty ? null : text;
 }
 
 List<ReportEditHistoryEntry> _editHistoryList(Object? value) {

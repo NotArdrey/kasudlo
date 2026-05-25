@@ -29,6 +29,71 @@ void main() {
     expect(find.text('worker@test.com'), findsOneWidget);
   });
 
+  testWidgets('forgot password sends reset email from login', (tester) async {
+    final controller = FakeAppController(signedIn: false);
+    await _pumpKasudlo(tester, controller);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Forgot password?'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Reset password'), findsOneWidget);
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Send Reset Link'));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter a valid email'), findsOneWidget);
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Email'),
+      'worker@test.com',
+    );
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Send Reset Link'));
+    await tester.pumpAndSettle();
+
+    expect(controller.requestPasswordResetCalls, 1);
+    expect(controller.requestedResetEmail, 'worker@test.com');
+    expect(find.textContaining('reset link has been sent'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Back to Sign In'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ElevatedButton, 'Sign In'), findsOneWidget);
+  });
+
+  testWidgets('password recovery link lets user set a new password', (
+    tester,
+  ) async {
+    final controller = FakeAppController.passwordRecovery();
+    await _pumpKasudlo(tester, controller);
+
+    expect(find.text('Choose a new password'), findsOneWidget);
+    expect(find.text('recover@test.com'), findsOneWidget);
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'New password'),
+      'secret1',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Confirm password'),
+      'secret2',
+    );
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Update Password'));
+    await tester.pumpAndSettle();
+    expect(find.text('Passwords do not match'), findsOneWidget);
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Confirm password'),
+      'secret1',
+    );
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Update Password'));
+    await tester.pumpAndSettle();
+
+    expect(controller.completePasswordResetCalls, 1);
+    expect(controller.completedPassword, 'secret1');
+    expect(find.widgetWithText(ElevatedButton, 'Sign In'), findsOneWidget);
+    expect(
+      find.text('Password updated. Sign in with your new password.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('admin navigation is hidden for workers and route redirects', (
     tester,
   ) async {
@@ -184,6 +249,68 @@ void main() {
 
     expect(controller.syncCalls, 1);
   });
+
+  testWidgets(
+    'health tips are editable for workers and view-only for patients',
+    (tester) async {
+      final workerController = FakeAppController.withHealthTips();
+      await _pumpKasudlo(tester, workerController);
+
+      expect(_navText('Tips'), findsOneWidget);
+      await tester.tap(_navText('Tips'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Health Tips'), findsWidgets);
+      expect(find.text('Dengue prevention'), findsOneWidget);
+      expect(
+        find.widgetWithText(ElevatedButton, 'Upload Health Tip'),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('Edit health tip'), findsOneWidget);
+      expect(find.byTooltip('Delete health tip'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Edit health tip'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit health tip'), findsOneWidget);
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Title'),
+        'Updated dengue prevention',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      expect(workerController.saveHealthTipCalls, 1);
+      expect(find.text('Updated dengue prevention'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Delete health tip'));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete health tip?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Confirm Delete'));
+      await tester.pumpAndSettle();
+
+      expect(workerController.deleteHealthTipCalls, 1);
+      expect(find.text('Updated dengue prevention'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+
+      final patientController = FakeAppController.withHealthTips(
+        role: AccountRole.patient,
+      );
+      await _pumpKasudlo(tester, patientController);
+      await tester.tap(_navText('Tips'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Dengue prevention'), findsOneWidget);
+      expect(
+        find.widgetWithText(ElevatedButton, 'Upload Health Tip'),
+        findsNothing,
+      );
+      expect(find.byTooltip('Add health tip'), findsNothing);
+      expect(find.byTooltip('Edit health tip'), findsNothing);
+      expect(find.byTooltip('Delete health tip'), findsNothing);
+    },
+  );
 
   testWidgets('pages fetch and render loaded household records', (
     tester,
@@ -648,6 +775,16 @@ class FakeAppController extends AppController {
     submissions = const [];
   }
 
+  FakeAppController.passwordRecovery() {
+    isReady = true;
+    isSignedIn = false;
+    isPasswordRecoverySession = true;
+    activeEmail = 'recover@test.com';
+    activeRole = AccountRole.worker;
+    passwordResetMessage = 'Choose a new password for this account.';
+    submissions = const [];
+  }
+
   FakeAppController.admin() {
     isReady = true;
     isSignedIn = true;
@@ -742,6 +879,30 @@ class FakeAppController extends AppController {
     submissions = [_submission('pending', SyncStatus.pending)];
   }
 
+  FakeAppController.withHealthTips({AccountRole role = AccountRole.worker}) {
+    isReady = true;
+    isSignedIn = true;
+    activeEmail = role == AccountRole.patient
+        ? 'patient@test.com'
+        : 'worker@test.com';
+    activeRole = role;
+    submissions = const [];
+    healthTips = [
+      HealthTip(
+        id: 'tip-one',
+        title: 'Dengue prevention',
+        description: 'Remove standing water and cover water containers.',
+        fileName: 'dengue.pdf',
+        mimeType: 'application/pdf',
+        fileSize: 2048,
+        attachmentBase64: 'aGVhbHRo',
+        createdAt: DateTime(2026, 5, 24, 9),
+        updatedAt: DateTime(2026, 5, 24, 10),
+        createdByEmail: 'worker@test.com',
+      ),
+    ];
+  }
+
   FakeAppController.withReportData() {
     isReady = true;
     isSignedIn = true;
@@ -801,6 +962,8 @@ class FakeAppController extends AppController {
   }
 
   int signInCalls = 0;
+  int requestPasswordResetCalls = 0;
+  int completePasswordResetCalls = 0;
   int loadAdminCalls = 0;
   int loadAuditCalls = 0;
   int createAdminCalls = 0;
@@ -809,8 +972,12 @@ class FakeAppController extends AppController {
   int submitCalls = 0;
   int updateReportCalls = 0;
   int deleteCalls = 0;
+  int saveHealthTipCalls = 0;
+  int deleteHealthTipCalls = 0;
   int syncCalls = 0;
   int preferenceUpdateCalls = 0;
+  String? requestedResetEmail;
+  String? completedPassword;
 
   @override
   bool get isSupabaseConfigured => false;
@@ -829,6 +996,25 @@ class FakeAppController extends AppController {
         ? AccountRole.patient
         : AccountRole.worker;
     isSignedIn = true;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> requestPasswordReset(String email) async {
+    requestPasswordResetCalls++;
+    requestedResetEmail = email;
+    passwordResetMessage =
+        'If an account exists for $email, a reset link has been sent.';
+    notifyListeners();
+  }
+
+  @override
+  Future<void> completePasswordReset(String password) async {
+    completePasswordResetCalls++;
+    completedPassword = password;
+    isPasswordRecoverySession = false;
+    isSignedIn = false;
+    passwordResetMessage = 'Password updated. Sign in with your new password.';
     notifyListeners();
   }
 
@@ -872,6 +1058,7 @@ class FakeAppController extends AppController {
     activeEmail = null;
     activeRole = AccountRole.worker;
     isSignedIn = false;
+    isPasswordRecoverySession = false;
     notifyListeners();
   }
 
@@ -934,6 +1121,58 @@ class FakeAppController extends AppController {
         )
         .toList();
     notifyListeners();
+  }
+
+  @override
+  Future<void> loadHealthTips() async {
+    notifyListeners();
+  }
+
+  @override
+  Future<bool> saveHealthTip({
+    String? id,
+    required String title,
+    required String description,
+    required String fileName,
+    required String mimeType,
+    required int fileSize,
+    required String attachmentBase64,
+  }) async {
+    saveHealthTipCalls++;
+    HealthTip? existing;
+    for (final tip in healthTips) {
+      if (tip.id == id) {
+        existing = tip;
+        break;
+      }
+    }
+    final saved = HealthTip(
+      id: id ?? 'created-health-tip-$saveHealthTipCalls',
+      title: title.trim(),
+      description: description.trim(),
+      fileName: fileName.trim(),
+      mimeType: mimeType.trim(),
+      fileSize: fileSize,
+      attachmentBase64: attachmentBase64.trim(),
+      createdAt: existing?.createdAt ?? DateTime(2026, 5, 24, 9),
+      updatedAt: DateTime(2026, 5, 24, 11, saveHealthTipCalls),
+      createdByEmail: existing?.createdByEmail ?? activeEmail ?? '',
+    );
+    healthTips = [
+      saved,
+      for (final tip in healthTips)
+        if (tip.id != saved.id) tip,
+    ];
+    notifyListeners();
+    return true;
+  }
+
+  @override
+  Future<bool> deleteHealthTip(String id) async {
+    deleteHealthTipCalls++;
+    healthTips = healthTips.where((tip) => tip.id != id).toList();
+    notifyListeners();
+    return true;
   }
 
   @override

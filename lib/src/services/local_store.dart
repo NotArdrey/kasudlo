@@ -11,12 +11,16 @@ class LocalStore {
   static const _submissionsTable = 'submissions';
   static const _keyValueTable = 'app_kv';
   static const _demoSeededKey = '__kasudlo_demo_seeded';
+  static const _healthTipsSeededKey = '__kasudlo_health_tips_seeded';
+  static const _healthTipsKey = '__kasudlo_health_tips';
   static const _preferencesKey = '__kasudlo_preferences';
 
   static Database? _database;
   static final Map<String, HealthSubmission> _submissionCache = {};
+  static final Map<String, HealthTip> _healthTipCache = {};
   static AppPreferences _preferencesCache = const AppPreferences();
   static bool _demoSeededCache = false;
+  static bool _healthTipsSeededCache = false;
 
   static Future<void> initialize() async {
     final databaseFactory = await createSqliteDatabaseFactory();
@@ -37,8 +41,10 @@ class LocalStore {
     await _database?.close();
     _database = null;
     _submissionCache.clear();
+    _healthTipCache.clear();
     _preferencesCache = const AppPreferences();
     _demoSeededCache = false;
+    _healthTipsSeededCache = false;
   }
 
   static Future<void> _openDatabase(
@@ -105,6 +111,43 @@ class LocalStore {
     _submissionCache.remove(clientSubmissionId);
   }
 
+  static List<HealthTip> loadHealthTips() {
+    _requireDatabase();
+    return _sortedHealthTips();
+  }
+
+  static Future<void> saveHealthTips(Iterable<HealthTip> healthTips) async {
+    final database = _requireDatabase();
+    _healthTipCache
+      ..clear()
+      ..addEntries(healthTips.map((tip) => MapEntry(tip.id, tip)));
+    await _putKeyValue(
+      database,
+      _healthTipsKey,
+      jsonEncode(_sortedHealthTips().map((tip) => tip.toJson()).toList()),
+    );
+  }
+
+  static Future<void> upsertHealthTip(HealthTip healthTip) async {
+    final database = _requireDatabase();
+    _healthTipCache[healthTip.id] = healthTip;
+    await _putKeyValue(
+      database,
+      _healthTipsKey,
+      jsonEncode(_sortedHealthTips().map((tip) => tip.toJson()).toList()),
+    );
+  }
+
+  static Future<void> deleteHealthTip(String id) async {
+    final database = _requireDatabase();
+    _healthTipCache.remove(id);
+    await _putKeyValue(
+      database,
+      _healthTipsKey,
+      jsonEncode(_sortedHealthTips().map((tip) => tip.toJson()).toList()),
+    );
+  }
+
   static AppPreferences loadPreferences() {
     _requireDatabase();
     return _preferencesCache;
@@ -125,6 +168,17 @@ class LocalStore {
     final database = _requireDatabase();
     await _putKeyValue(database, _demoSeededKey, 'true');
     _demoSeededCache = true;
+  }
+
+  static bool hasSeededHealthTips() {
+    _requireDatabase();
+    return _healthTipsSeededCache;
+  }
+
+  static Future<void> markHealthTipsSeeded() async {
+    final database = _requireDatabase();
+    await _putKeyValue(database, _healthTipsSeededKey, 'true');
+    _healthTipsSeededCache = true;
   }
 
   static Future<void> _createSchema(Database database, int version) async {
@@ -156,6 +210,7 @@ class LocalStore {
   static Future<void> _loadCaches() async {
     final database = _requireDatabase();
     _submissionCache.clear();
+    _healthTipCache.clear();
 
     final rows = await database.query(_submissionsTable);
     for (final row in rows) {
@@ -168,6 +223,7 @@ class LocalStore {
     final keyValues = await database.query(_keyValueTable);
     _preferencesCache = const AppPreferences();
     _demoSeededCache = false;
+    _healthTipsSeededCache = false;
     for (final row in keyValues) {
       final key = row['key'];
       final value = row['value'];
@@ -177,7 +233,20 @@ class LocalStore {
       if (key == _demoSeededKey) {
         _demoSeededCache = value == 'true';
       }
+      if (key == _healthTipsSeededKey) {
+        _healthTipsSeededCache = value == 'true';
+      }
+      if (key == _healthTipsKey && value is String) {
+        for (final healthTip in _healthTipsFromJson(value)) {
+          _healthTipCache[healthTip.id] = healthTip;
+        }
+      }
     }
+  }
+
+  static List<HealthTip> _sortedHealthTips() {
+    return _healthTipCache.values.toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
   }
 
   static Map<String, Object?> _submissionRow(HealthSubmission submission) => {
@@ -185,7 +254,7 @@ class LocalStore {
     'created_at': submission.createdAt.toIso8601String(),
     'sync_status': submission.syncStatus.name,
     'payload': jsonEncode(submission.toJson()),
-    'updated_at': DateTime.now().toIso8601String(),
+    'updated_at': submission.effectiveUpdatedAt.toIso8601String(),
   };
 
   static HealthSubmission? _submissionFromRow(Map<String, Object?> row) {
@@ -199,7 +268,14 @@ class LocalStore {
       if (decoded is! Map) {
         return null;
       }
-      return HealthSubmission.fromJson(Map<String, dynamic>.from(decoded));
+      final restoredJson = Map<String, dynamic>.from(decoded);
+      restoredJson['sync_status'] ??= row['sync_status'];
+      restoredJson['updated_at'] ??= row['updated_at'];
+      final restored = HealthSubmission.fromJson(restoredJson);
+      if (restored.syncStatus == SyncStatus.syncing) {
+        return restored.copyWith(syncStatus: SyncStatus.pending);
+      }
+      return restored;
     } catch (_) {
       return null;
     }
@@ -215,6 +291,22 @@ class LocalStore {
       return const AppPreferences();
     }
     return const AppPreferences();
+  }
+
+  static List<HealthTip> _healthTipsFromJson(String value) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((item) => HealthTip.fromJson(Map<String, dynamic>.from(item)))
+            .where((tip) => tip.id.trim().isNotEmpty)
+            .toList();
+      }
+    } catch (_) {
+      return const [];
+    }
+    return const [];
   }
 
   static Future<void> _putKeyValue(

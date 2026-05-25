@@ -3,6 +3,10 @@ class AppConfig {
   static const supabasePublishableKey = String.fromEnvironment(
     'SUPABASE_PUBLISHABLE_KEY',
   );
+  static const passwordResetRedirectUrl = String.fromEnvironment(
+    'PASSWORD_RESET_REDIRECT_URL',
+    defaultValue: 'com.kasudlo.kasudlo://login-callback',
+  );
   static const groqApiKey = String.fromEnvironment('GROQ_API_KEY');
 
   static bool get hasSupabase =>

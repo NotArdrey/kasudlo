@@ -22,7 +22,7 @@ class HomeScreen extends ConsumerWidget {
       actions: [
         IconButton(
           tooltip: 'Sync pending records',
-          onPressed: controller.pendingCount == 0
+          onPressed: controller.retryableSyncCount == 0
               ? null
               : controller.syncPending,
           icon: const Icon(Icons.sync),
@@ -223,6 +223,7 @@ class _RecentSubmissions extends StatelessWidget {
     return switch (status) {
       SyncStatus.synced => KasudloColors.primary,
       SyncStatus.failed => KasudloColors.critical,
+      SyncStatus.conflict => KasudloColors.critical,
       SyncStatus.syncing => KasudloColors.secondary,
       _ => KasudloColors.warning,
     };

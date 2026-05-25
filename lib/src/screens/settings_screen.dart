@@ -178,7 +178,7 @@ class SettingsScreen extends ConsumerWidget {
         _SettingsSection(
           title: 'Offline & Sync',
           footer: ElevatedButton.icon(
-            onPressed: controller.pendingCount == 0
+            onPressed: controller.retryableSyncCount == 0
                 ? null
                 : () {
                     controller.syncPending();
@@ -190,11 +190,20 @@ class SettingsScreen extends ConsumerWidget {
             _SettingTile(
               icon: Icons.cloud_queue_outlined,
               title: 'Sync status',
-              subtitle: _pendingLabel(controller.pendingCount),
+              subtitle: _pendingLabel(
+                controller.pendingCount,
+                controller.conflictCount,
+              ),
               trailing: StatusBadge(
-                label: controller.pendingCount == 0 ? 'Clear' : 'Pending',
+                label: controller.conflictCount > 0
+                    ? 'Review'
+                    : controller.pendingCount == 0
+                    ? 'Clear'
+                    : 'Pending',
                 color: controller.pendingCount == 0
                     ? KasudloColors.primary
+                    : controller.conflictCount > 0
+                    ? KasudloColors.critical
                     : KasudloColors.warning,
               ),
             ),
@@ -350,7 +359,13 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  String _pendingLabel(int count) {
+  String _pendingLabel(int count, int conflictCount) {
+    if (conflictCount == 1) {
+      return '1 record needs review before sync';
+    }
+    if (conflictCount > 1) {
+      return '$conflictCount records need review before sync';
+    }
     if (count == 1) {
       return '1 pending record';
     }

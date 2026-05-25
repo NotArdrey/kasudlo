@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'screens/admin_screen.dart';
 import 'screens/collection_screen.dart';
+import 'screens/health_tips_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/reports_screen.dart';
@@ -36,6 +37,9 @@ class _KasudloAppState extends ConsumerState<KasudloApp> {
         }
 
         final isLogin = state.matchedLocation == '/login';
+        if (controller.isPasswordRecoverySession) {
+          return isLogin ? null : '/login';
+        }
         if (!controller.isSignedIn) {
           return isLogin ? null : '/login';
         }
@@ -85,6 +89,14 @@ class _KasudloAppState extends ConsumerState<KasudloApp> {
                 GoRoute(
                   path: '/reports',
                   builder: (context, state) => const ReportsScreen(),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/health-tips',
+                  builder: (context, state) => const HealthTipsScreen(),
                 ),
               ],
             ),

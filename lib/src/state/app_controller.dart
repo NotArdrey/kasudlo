@@ -19,40 +19,58 @@ final appControllerProvider = ChangeNotifierProvider<AppController>((ref) {
 class AppController extends ChangeNotifier {
   final _uuid = const Uuid();
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  StreamSubscription<String?>? _passwordRecoverySubscription;
   bool _isSyncInProgress = false;
 
   bool isReady = false;
   bool isBusy = false;
   bool isSignedIn = false;
+  bool isPasswordRecoverySession = false;
   bool isAdminLoading = false;
   bool isAdminActionBusy = false;
   bool isAuditLoading = false;
   bool isAiLoading = false;
+  bool isHealthTipsLoading = false;
+  bool isHealthTipActionBusy = false;
   String? activeEmail;
   AccountRole activeRole = AccountRole.worker;
   String? errorMessage;
   String? adminErrorMessage;
   String? auditErrorMessage;
   String? aiErrorMessage;
+  String? healthTipsErrorMessage;
   AppPreferences preferences = const AppPreferences();
   List<HealthSubmission> submissions = const [];
+  List<HealthTip> healthTips = const [];
   List<AdminUser> adminUsers = const [];
   List<AuditLogEntry> auditLogs = const [];
+  String? passwordResetMessage;
 
   bool get isSupabaseConfigured => SupabaseGateway.isConfigured;
   bool get isAdmin => activeRole == AccountRole.admin;
+  bool get canManageHealthTips => activeRole != AccountRole.patient;
+  int get conflictCount => submissions
+      .where((submission) => submission.syncStatus == SyncStatus.conflict)
+      .length;
+  int get retryableSyncCount => submissions
+      .where((submission) => _isRetryableSyncStatus(submission.syncStatus))
+      .length;
   int get pendingCount => submissions
       .where(
         (submission) =>
             submission.syncStatus == SyncStatus.pending ||
-            submission.syncStatus == SyncStatus.failed,
+            submission.syncStatus == SyncStatus.failed ||
+            submission.syncStatus == SyncStatus.syncing ||
+            submission.syncStatus == SyncStatus.conflict,
       )
       .length;
   ReportSummary get summary => ReportSummary.fromSubmissions(submissions);
 
   Future<void> bootstrap() async {
+    _startPasswordRecoveryWatcher();
     preferences = LocalStore.loadPreferences();
     submissions = LocalStore.loadSubmissions();
+    healthTips = LocalStore.loadHealthTips();
     if (!isSupabaseConfigured) {
       if (submissions.isEmpty && !LocalStore.hasSeededDemoData()) {
         await LocalStore.upsertSubmissions(_demoSubmissions());
@@ -61,15 +79,19 @@ class AppController extends ChangeNotifier {
       } else {
         await _refreshLornaCruzDemoDetails();
       }
+      await _seedLocalHealthTipsIfNeeded();
     }
 
     final user = SupabaseGateway.currentUser;
-    isSignedIn = user != null;
+    isPasswordRecoverySession =
+        isSupabaseConfigured && SupabaseGateway.isPasswordRecoverySession;
+    isSignedIn = user != null && !isPasswordRecoverySession;
     activeEmail = user?.email;
     activeRole = AccountRole.worker;
-    if (user != null && isSupabaseConfigured) {
+    if (user != null && isSupabaseConfigured && !isPasswordRecoverySession) {
       await _loadActiveProfile(fallbackEmail: user.email);
       await _refreshRemoteSubmissions();
+      await _refreshRemoteHealthTips();
       await syncPending();
     }
     isReady = true;
@@ -81,6 +103,7 @@ class AppController extends ChangeNotifier {
     await _runBusy(() async {
       if (isSupabaseConfigured) {
         await SupabaseGateway.signIn(email: email, password: password);
+        isPasswordRecoverySession = false;
         await _loadActiveProfile(
           fallbackEmail: SupabaseGateway.currentUser?.email ?? email,
         );
@@ -91,6 +114,7 @@ class AppController extends ChangeNotifier {
           summary: 'Signed in to KASUDLO.',
         );
         await _refreshRemoteSubmissions();
+        await _refreshRemoteHealthTips();
         await syncPending();
       } else {
         final normalizedEmail = email.trim().isEmpty
@@ -104,6 +128,7 @@ class AppController extends ChangeNotifier {
             ? AccountRole.patient
             : AccountRole.worker;
         isSignedIn = true;
+        await _seedLocalHealthTipsIfNeeded();
         await _logAuditEvent(
           action: 'auth.sign_in',
           entityType: 'session',
@@ -121,12 +146,63 @@ class AppController extends ChangeNotifier {
         summary: 'Signed out of KASUDLO.',
       );
       await SupabaseGateway.signOut();
+      SupabaseGateway.clearPasswordRecoverySession();
       isSignedIn = false;
+      isPasswordRecoverySession = false;
       activeEmail = null;
       activeRole = AccountRole.worker;
+      healthTipsErrorMessage = null;
       adminUsers = const [];
       auditLogs = const [];
     });
+  }
+
+  Future<void> requestPasswordReset(String email) async {
+    final normalizedEmail = email.trim();
+    await _runBusy(() async {
+      if (!isSupabaseConfigured) {
+        passwordResetMessage =
+            'Password reset is available after Supabase is configured.';
+        return;
+      }
+
+      await SupabaseGateway.requestPasswordResetEmail(email: normalizedEmail);
+      passwordResetMessage =
+          'If an account exists for $normalizedEmail, a reset link has been sent. Open it on this device to choose a new password.';
+    });
+  }
+
+  Future<void> completePasswordReset(String password) async {
+    await _runBusy(() async {
+      if (!isSupabaseConfigured) {
+        throw StateError('Password reset needs live Supabase configuration.');
+      }
+      if (!isPasswordRecoverySession && SupabaseGateway.currentUser == null) {
+        throw StateError(
+          'Open the reset link from your email before choosing a new password.',
+        );
+      }
+
+      await SupabaseGateway.updatePassword(password: password);
+      await _logAuditEvent(
+        action: 'auth.password_reset',
+        entityType: 'session',
+        summary: 'Updated password from reset flow.',
+      );
+      await SupabaseGateway.signOut();
+      SupabaseGateway.clearPasswordRecoverySession();
+      isPasswordRecoverySession = false;
+      isSignedIn = false;
+      activeRole = AccountRole.worker;
+      passwordResetMessage =
+          'Password updated. Sign in with your new password.';
+    });
+  }
+
+  void clearAuthMessages() {
+    errorMessage = null;
+    passwordResetMessage = null;
+    notifyListeners();
   }
 
   Future<void> updatePreferences(AppPreferences nextPreferences) async {
@@ -282,8 +358,123 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  Future<void> loadHealthTips() async {
+    isHealthTipsLoading = true;
+    healthTipsErrorMessage = null;
+    notifyListeners();
+    try {
+      if (isSupabaseConfigured && isSignedIn) {
+        await _refreshRemoteHealthTips(logView: true);
+      } else {
+        healthTips = LocalStore.loadHealthTips();
+        await _seedLocalHealthTipsIfNeeded();
+      }
+    } catch (error) {
+      healthTipsErrorMessage = _friendlyErrorMessage(error);
+    } finally {
+      isHealthTipsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> saveHealthTip({
+    String? id,
+    required String title,
+    required String description,
+    required String fileName,
+    required String mimeType,
+    required int fileSize,
+    required String attachmentBase64,
+  }) async {
+    if (!canManageHealthTips) {
+      healthTipsErrorMessage = 'Patient accounts can view health tips only.';
+      notifyListeners();
+      return false;
+    }
+
+    isHealthTipActionBusy = true;
+    healthTipsErrorMessage = null;
+    notifyListeners();
+    try {
+      final now = DateTime.now().toUtc();
+      final previous = id == null ? null : _healthTipById(id);
+      final healthTip = HealthTip(
+        id: previous?.id ?? id ?? _uuid.v4(),
+        title: title.trim(),
+        description: description.trim(),
+        fileName: fileName.trim(),
+        mimeType: mimeType.trim(),
+        fileSize: fileSize,
+        attachmentBase64: attachmentBase64.trim(),
+        createdAt: previous?.createdAt ?? now,
+        updatedAt: now,
+        createdByEmail: previous?.createdByEmail ?? activeEmail ?? '',
+      );
+
+      final savedHealthTip = isSupabaseConfigured && isSignedIn
+          ? await SupabaseGateway.upsertHealthTip(healthTip)
+          : healthTip;
+      await LocalStore.upsertHealthTip(savedHealthTip);
+      healthTips = LocalStore.loadHealthTips();
+      await _logAuditEvent(
+        action: previous == null ? 'health_tip.create' : 'health_tip.update',
+        entityType: 'health_tip',
+        entityId: savedHealthTip.id,
+        summary: previous == null
+            ? 'Created health tip "${savedHealthTip.title}".'
+            : 'Updated health tip "${savedHealthTip.title}".',
+      );
+      return true;
+    } catch (error) {
+      healthTipsErrorMessage = _friendlyErrorMessage(error);
+      return false;
+    } finally {
+      isHealthTipActionBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> deleteHealthTip(String id) async {
+    if (!canManageHealthTips) {
+      healthTipsErrorMessage = 'Patient accounts can view health tips only.';
+      notifyListeners();
+      return false;
+    }
+
+    isHealthTipActionBusy = true;
+    healthTipsErrorMessage = null;
+    notifyListeners();
+    try {
+      final deleted = _healthTipById(id);
+      if (isSupabaseConfigured && isSignedIn) {
+        await SupabaseGateway.deleteHealthTip(id);
+      }
+      await LocalStore.deleteHealthTip(id);
+      healthTips = LocalStore.loadHealthTips();
+      await _logAuditEvent(
+        action: 'health_tip.delete',
+        entityType: 'health_tip',
+        entityId: id,
+        summary: deleted == null
+            ? 'Deleted health tip.'
+            : 'Deleted health tip "${deleted.title}".',
+      );
+      return true;
+    } catch (error) {
+      healthTipsErrorMessage = _friendlyErrorMessage(error);
+      return false;
+    } finally {
+      isHealthTipActionBusy = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> saveDraft(HealthSubmission submission) async {
-    final draft = submission.copyWith(syncStatus: SyncStatus.draft);
+    final draft = submission.copyWith(
+      syncStatus: SyncStatus.draft,
+      updatedAt: DateTime.now().toUtc(),
+      lastError: null,
+    );
     await LocalStore.upsertSubmission(draft);
     _reloadSubmissions();
     await _logAuditEvent(
@@ -295,7 +486,11 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> submit(HealthSubmission submission) async {
-    final pending = submission.copyWith(syncStatus: SyncStatus.pending);
+    final pending = submission.copyWith(
+      syncStatus: SyncStatus.pending,
+      updatedAt: DateTime.now().toUtc(),
+      lastError: null,
+    );
     await LocalStore.upsertSubmission(pending);
     _reloadSubmissions();
     await _logAuditEvent(
@@ -308,16 +503,18 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> updateReportSubmission(HealthSubmission submission) async {
+    final editedAt = DateTime.now().toUtc();
     final previous = _submissionById(submission.clientSubmissionId);
     final withHistory = submission.withEditHistory(
       previous: previous ?? submission,
-      editedAt: DateTime.now(),
+      editedAt: editedAt,
       editedBy: activeEmail,
     );
     final updated = withHistory.copyWith(
       syncStatus: submission.syncStatus == SyncStatus.draft
           ? SyncStatus.draft
           : SyncStatus.pending,
+      updatedAt: editedAt,
       lastError: null,
     );
     await LocalStore.upsertSubmission(updated);
@@ -406,32 +603,63 @@ class AppController extends ChangeNotifier {
       );
 
       for (final submission in List<HealthSubmission>.from(submissions)) {
-        if (submission.syncStatus != SyncStatus.pending &&
-            submission.syncStatus != SyncStatus.failed) {
+        if (!_isRetryableSyncStatus(submission.syncStatus)) {
           continue;
         }
 
+        final queuedSubmission = submission.syncStatus == SyncStatus.syncing
+            ? submission.copyWith(syncStatus: SyncStatus.pending)
+            : submission;
+
         await LocalStore.upsertSubmission(
-          submission.copyWith(syncStatus: SyncStatus.syncing),
+          queuedSubmission.copyWith(syncStatus: SyncStatus.syncing),
         );
         _reloadSubmissions();
 
         try {
-          await SupabaseGateway.submitAssessment(submission);
+          final remoteBeforeUpload = await SupabaseGateway.fetchAssessment(
+            queuedSubmission.clientSubmissionId,
+          );
+          if (_shouldHoldForConflict(queuedSubmission, remoteBeforeUpload)) {
+            await LocalStore.upsertSubmission(
+              _conflictedSubmission(
+                localSubmission: queuedSubmission,
+                remoteSubmission: remoteBeforeUpload!,
+              ),
+            );
+            failedCount++;
+            await _logAuditEvent(
+              action: 'sync.record.conflict',
+              entityType: 'household_assessment',
+              entityId: queuedSubmission.clientSubmissionId,
+              summary:
+                  'Held sync for ${queuedSubmission.respondentName} because Supabase has newer data.',
+            );
+            _reloadSubmissions();
+            continue;
+          }
+
+          final remoteSubmission = await SupabaseGateway.submitAssessment(
+            queuedSubmission,
+          );
           await LocalStore.upsertSubmission(
-            submission.copyWith(syncStatus: SyncStatus.synced),
+            _syncedSubmissionFrom(
+              localSubmission: queuedSubmission,
+              remoteSubmission: remoteSubmission,
+            ),
           );
           syncedCount++;
           await _logAuditEvent(
             action: 'sync.record.success',
             entityType: 'household_assessment',
-            entityId: submission.clientSubmissionId,
-            summary: 'Synced assessment for ${submission.respondentName}.',
+            entityId: queuedSubmission.clientSubmissionId,
+            summary:
+                'Synced assessment for ${queuedSubmission.respondentName}.',
           );
         } catch (error) {
           failedCount++;
           await LocalStore.upsertSubmission(
-            submission.copyWith(
+            queuedSubmission.copyWith(
               syncStatus: SyncStatus.failed,
               lastError: error.toString(),
             ),
@@ -439,9 +667,9 @@ class AppController extends ChangeNotifier {
           await _logAuditEvent(
             action: 'sync.record.failure',
             entityType: 'household_assessment',
-            entityId: submission.clientSubmissionId,
+            entityId: queuedSubmission.clientSubmissionId,
             summary:
-                'Failed to sync assessment for ${submission.respondentName}.',
+                'Failed to sync assessment for ${queuedSubmission.respondentName}.',
             metadata: {'error': error.toString()},
           );
         }
@@ -475,6 +703,7 @@ class AppController extends ChangeNotifier {
     required bool consentGiven,
     required String notes,
   }) {
+    final now = DateTime.now().toUtc();
     return HealthSubmission(
       clientSubmissionId: _uuid.v4(),
       respondentName: respondentName.trim(),
@@ -490,8 +719,9 @@ class AppController extends ChangeNotifier {
       surveyData: surveyData,
       consentGiven: consentGiven,
       notes: notes.trim(),
-      createdAt: DateTime.now(),
+      createdAt: now,
       syncStatus: SyncStatus.draft,
+      updatedAt: now,
     );
   }
 
@@ -519,9 +749,17 @@ class AppController extends ChangeNotifier {
   String debugFriendlyErrorMessage(Object error) =>
       _friendlyErrorMessage(error);
 
+  @visibleForTesting
+  Iterable<HealthSubmission> debugMergeRemoteSubmissions(
+    List<HealthSubmission> remoteSubmissions,
+  ) {
+    return _mergeRemoteSubmissions(remoteSubmissions);
+  }
+
   Future<void> _runBusy(Future<void> Function() action) async {
     isBusy = true;
     errorMessage = null;
+    passwordResetMessage = null;
     notifyListeners();
     try {
       await action();
@@ -531,6 +769,25 @@ class AppController extends ChangeNotifier {
       isBusy = false;
       notifyListeners();
     }
+  }
+
+  void _startPasswordRecoveryWatcher() {
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    _passwordRecoverySubscription ??= SupabaseGateway.passwordRecoveryStream
+        .listen(_handlePasswordRecovery);
+  }
+
+  void _handlePasswordRecovery(String? email) {
+    isPasswordRecoverySession = true;
+    isSignedIn = false;
+    activeEmail = email ?? SupabaseGateway.currentUser?.email;
+    activeRole = AccountRole.worker;
+    errorMessage = null;
+    passwordResetMessage = 'Choose a new password for this account.';
+    notifyListeners();
   }
 
   void _reloadSubmissions() {
@@ -562,23 +819,7 @@ class AppController extends ChangeNotifier {
         return;
       }
 
-      final localSubmissions = {
-        for (final submission in submissions)
-          submission.clientSubmissionId: submission,
-      };
-      final mergedSubmissions = remoteSubmissions.map((remoteSubmission) {
-        final localSubmission =
-            localSubmissions[remoteSubmission.clientSubmissionId];
-        if (localSubmission == null ||
-            remoteSubmission.editHistory.length >=
-                localSubmission.editHistory.length) {
-          return remoteSubmission;
-        }
-
-        return remoteSubmission.copyWith(
-          editHistory: localSubmission.editHistory,
-        );
-      });
+      final mergedSubmissions = _mergeRemoteSubmissions(remoteSubmissions);
 
       await LocalStore.upsertSubmissions(mergedSubmissions);
       submissions = LocalStore.loadSubmissions();
@@ -595,6 +836,31 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  Future<void> _refreshRemoteHealthTips({bool logView = false}) async {
+    if (!isSupabaseConfigured || SupabaseGateway.currentUser == null) {
+      return;
+    }
+
+    try {
+      final remoteHealthTips = await SupabaseGateway.listHealthTips();
+      await LocalStore.saveHealthTips(remoteHealthTips);
+      healthTips = LocalStore.loadHealthTips();
+      if (logView) {
+        await _logAuditEvent(
+          action: 'health_tip.list',
+          entityType: 'health_tip',
+          summary: 'Viewed health tips.',
+          metadata: {'count': remoteHealthTips.length},
+        );
+      }
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Unable to refresh remote health tips: $error');
+      }
+      rethrow;
+    }
+  }
+
   HealthSubmission? _submissionById(String clientSubmissionId) {
     for (final submission in submissions) {
       if (submission.clientSubmissionId == clientSubmissionId) {
@@ -602,6 +868,167 @@ class AppController extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  HealthTip? _healthTipById(String id) {
+    for (final healthTip in healthTips) {
+      if (healthTip.id == id) {
+        return healthTip;
+      }
+    }
+    return null;
+  }
+
+  Iterable<HealthSubmission> _mergeRemoteSubmissions(
+    List<HealthSubmission> remoteSubmissions,
+  ) {
+    final localSubmissions = {
+      for (final submission in submissions)
+        submission.clientSubmissionId: submission,
+    };
+    final remoteIds = <String>{};
+    final merged = <HealthSubmission>[];
+
+    for (final remoteSubmission in remoteSubmissions) {
+      remoteIds.add(remoteSubmission.clientSubmissionId);
+      final localSubmission =
+          localSubmissions[remoteSubmission.clientSubmissionId];
+      if (localSubmission == null) {
+        merged.add(remoteSubmission);
+        continue;
+      }
+
+      merged.add(
+        _mergeRemoteSubmission(
+          localSubmission: localSubmission,
+          remoteSubmission: remoteSubmission,
+        ),
+      );
+    }
+
+    for (final localSubmission in submissions) {
+      if (remoteIds.contains(localSubmission.clientSubmissionId)) {
+        continue;
+      }
+      merged.add(
+        localSubmission.syncStatus == SyncStatus.syncing
+            ? localSubmission.copyWith(syncStatus: SyncStatus.pending)
+            : localSubmission,
+      );
+    }
+
+    return merged;
+  }
+
+  HealthSubmission _mergeRemoteSubmission({
+    required HealthSubmission localSubmission,
+    required HealthSubmission remoteSubmission,
+  }) {
+    if (localSubmission.syncStatus == SyncStatus.conflict) {
+      if (localSubmission.hasSameAssessmentContent(remoteSubmission)) {
+        return _syncedSubmissionFrom(
+          localSubmission: localSubmission,
+          remoteSubmission: remoteSubmission,
+        );
+      }
+
+      return localSubmission.copyWith(
+        remoteUpdatedAt:
+            _remoteClock(remoteSubmission) ?? localSubmission.remoteUpdatedAt,
+      );
+    }
+
+    if (_hasUnsentLocalWork(localSubmission)) {
+      if (_shouldHoldForConflict(localSubmission, remoteSubmission)) {
+        return _conflictedSubmission(
+          localSubmission: localSubmission,
+          remoteSubmission: remoteSubmission,
+        );
+      }
+
+      return localSubmission.syncStatus == SyncStatus.syncing
+          ? localSubmission.copyWith(syncStatus: SyncStatus.pending)
+          : localSubmission;
+    }
+
+    if (localSubmission.hasSameAssessmentContent(remoteSubmission)) {
+      return _syncedSubmissionFrom(
+        localSubmission: localSubmission,
+        remoteSubmission: remoteSubmission,
+      );
+    }
+
+    return remoteSubmission;
+  }
+
+  bool _isRetryableSyncStatus(SyncStatus status) {
+    return status == SyncStatus.pending ||
+        status == SyncStatus.failed ||
+        status == SyncStatus.syncing;
+  }
+
+  bool _hasUnsentLocalWork(HealthSubmission submission) {
+    return submission.syncStatus == SyncStatus.draft ||
+        _isRetryableSyncStatus(submission.syncStatus);
+  }
+
+  bool _shouldHoldForConflict(
+    HealthSubmission localSubmission,
+    HealthSubmission? remoteSubmission,
+  ) {
+    if (remoteSubmission == null ||
+        localSubmission.hasSameAssessmentContent(remoteSubmission)) {
+      return false;
+    }
+
+    final remoteUpdatedAt = _remoteClock(remoteSubmission);
+    if (remoteUpdatedAt == null) {
+      return false;
+    }
+
+    final lastSeenRemoteAt = localSubmission.remoteUpdatedAt;
+    final localEditedAt = localSubmission.effectiveUpdatedAt;
+    const clockTolerance = Duration(seconds: 1);
+
+    if (lastSeenRemoteAt == null) {
+      return remoteUpdatedAt.isAfter(localEditedAt.add(clockTolerance));
+    }
+
+    return remoteUpdatedAt.isAfter(lastSeenRemoteAt.add(clockTolerance)) &&
+        remoteUpdatedAt.isAfter(localEditedAt.add(clockTolerance));
+  }
+
+  HealthSubmission _conflictedSubmission({
+    required HealthSubmission localSubmission,
+    required HealthSubmission remoteSubmission,
+  }) {
+    return localSubmission.copyWith(
+      syncStatus: SyncStatus.conflict,
+      remoteUpdatedAt:
+          _remoteClock(remoteSubmission) ?? localSubmission.remoteUpdatedAt,
+      lastError:
+          'Supabase has a newer version of this record. Review the local changes, edit if needed, then save again to sync.',
+    );
+  }
+
+  HealthSubmission _syncedSubmissionFrom({
+    required HealthSubmission localSubmission,
+    HealthSubmission? remoteSubmission,
+  }) {
+    final remoteUpdatedAt =
+        _remoteClock(remoteSubmission) ?? DateTime.now().toUtc();
+    final syncedSubmission = remoteSubmission ?? localSubmission;
+
+    return syncedSubmission.copyWith(
+      syncStatus: SyncStatus.synced,
+      updatedAt: localSubmission.effectiveUpdatedAt,
+      remoteUpdatedAt: remoteUpdatedAt,
+      lastError: null,
+    );
+  }
+
+  DateTime? _remoteClock(HealthSubmission? submission) {
+    return submission?.remoteUpdatedAt ?? submission?.updatedAt;
   }
 
   Future<void> _logAuditEvent({
@@ -698,6 +1125,14 @@ class AppController extends ChangeNotifier {
     if (normalized.contains('email not confirmed')) {
       return 'Confirm this email address before signing in.';
     }
+    if (normalized.contains('code verifier') ||
+        normalized.contains('expired')) {
+      return 'This reset link is expired. Request a new password reset email.';
+    }
+    if (normalized.contains('session missing') ||
+        normalized.contains('authsessionmissing')) {
+      return 'Open the reset link from your email before choosing a new password.';
+    }
     if (normalized.contains('network') ||
         normalized.contains('failed host lookup') ||
         normalized.contains('xmlhttprequest')) {
@@ -707,6 +1142,47 @@ class AppController extends ChangeNotifier {
     return message
         .replaceFirst(RegExp(r'^Exception:\s*'), '')
         .replaceFirst(RegExp(r'^Bad state:\s*'), '');
+  }
+
+  Future<void> _seedLocalHealthTipsIfNeeded() async {
+    if (healthTips.isNotEmpty || LocalStore.hasSeededHealthTips()) {
+      return;
+    }
+    await LocalStore.saveHealthTips(_demoHealthTips());
+    await LocalStore.markHealthTipsSeeded();
+    healthTips = LocalStore.loadHealthTips();
+  }
+
+  List<HealthTip> _demoHealthTips() {
+    final now = DateTime.now().toUtc();
+    return [
+      HealthTip(
+        id: 'demo-health-tip-hydration',
+        title: 'Hydration during field days',
+        description:
+            'Drink safe water regularly, especially during hot barangay visits. Watch for dizziness, dry mouth, and dark urine.',
+        fileName: '',
+        mimeType: '',
+        fileSize: 0,
+        attachmentBase64: '',
+        createdAt: now.subtract(const Duration(days: 3)),
+        updatedAt: now.subtract(const Duration(days: 3)),
+        createdByEmail: activeEmail ?? 'local-demo@kasudlo.app',
+      ),
+      HealthTip(
+        id: 'demo-health-tip-dengue',
+        title: 'Dengue prevention checklist',
+        description:
+            'Remove standing water, cover containers, and seek care quickly for persistent fever, severe headache, or bleeding symptoms.',
+        fileName: '',
+        mimeType: '',
+        fileSize: 0,
+        attachmentBase64: '',
+        createdAt: now.subtract(const Duration(days: 1)),
+        updatedAt: now.subtract(const Duration(days: 1)),
+        createdByEmail: activeEmail ?? 'local-demo@kasudlo.app',
+      ),
+    ];
   }
 
   List<HealthSubmission> _demoSubmissions() {
@@ -1148,6 +1624,7 @@ class AppController extends ChangeNotifier {
   @override
   void dispose() {
     _connectivitySubscription?.cancel();
+    _passwordRecoverySubscription?.cancel();
     super.dispose();
   }
 }
