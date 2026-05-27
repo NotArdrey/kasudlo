@@ -1,13 +1,13 @@
-enum SyncStatus { draft, pending, syncing, synced, failed, conflict }
+enum SyncStatus { draft, pending, syncing, synced, failed, conflict, pendingDelete }
 
-enum AccountRole { worker, patient, admin }
+enum AccountRole { nurse, patient, admin }
 
 AccountRole accountRoleFromString(Object? value) {
   final normalized = '$value'.trim().toLowerCase();
   return switch (normalized) {
     'admin' => AccountRole.admin,
     'patient' => AccountRole.patient,
-    _ => AccountRole.worker,
+    _ => AccountRole.nurse,
   };
 }
 
@@ -15,7 +15,7 @@ extension AccountRoleLabel on AccountRole {
   String get label => switch (this) {
     AccountRole.admin => 'Admin',
     AccountRole.patient => 'Patient',
-    AccountRole.worker => 'Worker',
+    AccountRole.nurse => 'Nurse',
   };
 }
 
@@ -37,6 +37,39 @@ class UserProfile {
     email: (json['email'] as String?) ?? '',
     fullName: (json['full_name'] as String?) ?? '',
     role: accountRoleFromString(json['role']),
+  );
+}
+
+class OfflineUserCache {
+  const OfflineUserCache({
+    required this.id,
+    required this.email,
+    required this.role,
+    required this.credentialHash,
+    required this.lastLoginAt,
+  });
+
+  final String id;
+  final String email;
+  final AccountRole role;
+  final String credentialHash;
+  final DateTime lastLoginAt;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'email': email,
+    'role': role.name,
+    'credential_hash': credentialHash,
+    'last_login_at': lastLoginAt.toIso8601String(),
+  };
+
+  factory OfflineUserCache.fromJson(Map<String, dynamic> json) => OfflineUserCache(
+    id: (json['id'] as String?) ?? '',
+    email: (json['email'] as String?) ?? '',
+    role: accountRoleFromString(json['role']),
+    credentialHash: (json['credential_hash'] as String?) ?? '',
+    lastLoginAt: DateTime.tryParse('${json['last_login_at'] ?? ''}') ??
+        DateTime.fromMillisecondsSinceEpoch(0),
   );
 }
 
@@ -212,6 +245,28 @@ class AiHealthGuidance {
   final String emergencyWarning;
   final String disclaimer;
 
+  AiHealthGuidance copyWith({
+    String? riskLevel,
+    String? summary,
+    List<String>? concerningFindings,
+    List<String>? recommendedActions,
+    List<String>? followUpQuestions,
+    List<AiCareSuggestion>? careSuggestions,
+    String? emergencyWarning,
+    String? disclaimer,
+  }) {
+    return AiHealthGuidance(
+      riskLevel: riskLevel ?? this.riskLevel,
+      summary: summary ?? this.summary,
+      concerningFindings: concerningFindings ?? this.concerningFindings,
+      recommendedActions: recommendedActions ?? this.recommendedActions,
+      followUpQuestions: followUpQuestions ?? this.followUpQuestions,
+      careSuggestions: careSuggestions ?? this.careSuggestions,
+      emergencyWarning: emergencyWarning ?? this.emergencyWarning,
+      disclaimer: disclaimer ?? this.disclaimer,
+    );
+  }
+
   factory AiHealthGuidance.fromJson(
     Map<String, dynamic> json,
   ) => AiHealthGuidance(
@@ -243,33 +298,18 @@ class AiHealthGuidance {
   };
 }
 
-class HealthTip {
-  const HealthTip({
-    required this.id,
-    required this.title,
-    required this.description,
+class HealthTipAttachment {
+  const HealthTipAttachment({
     required this.fileName,
     required this.mimeType,
     required this.fileSize,
-    required this.attachmentBase64,
-    required this.createdAt,
-    required this.updatedAt,
-    this.createdByEmail = '',
+    required this.base64,
   });
 
-  final String id;
-  final String title;
-  final String description;
   final String fileName;
   final String mimeType;
   final int fileSize;
-  final String attachmentBase64;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-  final String createdByEmail;
-
-  bool get hasAttachment =>
-      fileName.trim().isNotEmpty && attachmentBase64.trim().isNotEmpty;
+  final String base64;
 
   bool get isImage {
     final normalizedMime = mimeType.toLowerCase();
@@ -282,13 +322,55 @@ class HealthTip {
         normalizedName.endsWith('.webp');
   }
 
+  Map<String, dynamic> toJson() => {
+    'file_name': fileName,
+    'mime_type': mimeType,
+    'file_size': fileSize,
+    'attachment_base64': base64,
+  };
+
+  factory HealthTipAttachment.fromJson(Map<String, dynamic> json) =>
+      HealthTipAttachment(
+        fileName: (json['file_name'] as String?) ?? '',
+        mimeType: (json['mime_type'] as String?) ?? '',
+        fileSize: _intValue(json['file_size']) ?? 0,
+        base64: (json['attachment_base64'] as String?) ?? '',
+      );
+}
+
+class HealthTip {
+  const HealthTip({
+    required this.id,
+    required this.title,
+    required this.description,
+    this.attachments = const [],
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdByEmail = '',
+  });
+
+  final String id;
+  final String title;
+  final String description;
+  final List<HealthTipAttachment> attachments;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String createdByEmail;
+
+  bool get hasAttachment => attachments.isNotEmpty;
+
+  bool get hasImage => attachments.any((a) => a.isImage);
+  
+  List<HealthTipAttachment> get imageAttachments =>
+      attachments.where((a) => a.isImage).toList();
+      
+  List<HealthTipAttachment> get fileAttachments =>
+      attachments.where((a) => !a.isImage).toList();
+
   HealthTip copyWith({
     String? title,
     String? description,
-    String? fileName,
-    String? mimeType,
-    int? fileSize,
-    String? attachmentBase64,
+    List<HealthTipAttachment>? attachments,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? createdByEmail,
@@ -297,10 +379,7 @@ class HealthTip {
       id: id,
       title: title ?? this.title,
       description: description ?? this.description,
-      fileName: fileName ?? this.fileName,
-      mimeType: mimeType ?? this.mimeType,
-      fileSize: fileSize ?? this.fileSize,
-      attachmentBase64: attachmentBase64 ?? this.attachmentBase64,
+      attachments: attachments ?? this.attachments,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       createdByEmail: createdByEmail ?? this.createdByEmail,
@@ -311,10 +390,7 @@ class HealthTip {
     'id': id,
     'title': title,
     'description': description,
-    'file_name': fileName,
-    'mime_type': mimeType,
-    'file_size': fileSize,
-    'attachment_base64': attachmentBase64,
+    'attachments': attachments.map((a) => a.toJson()).toList(),
     'created_by_email': createdByEmail,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
@@ -324,14 +400,29 @@ class HealthTip {
     final createdAt =
         _dateTimeValue(json['created_at']) ??
         DateTime.fromMillisecondsSinceEpoch(0);
+        
+    final attachmentsList = <HealthTipAttachment>[];
+    if (json['attachments'] != null) {
+      attachmentsList.addAll(
+        _mapList(json['attachments']).map(HealthTipAttachment.fromJson),
+      );
+    } else if (json['file_name'] != null &&
+        json['attachment_base64'] != null &&
+        '${json['file_name']}'.isNotEmpty) {
+      // Legacy support for single attachment
+      attachmentsList.add(HealthTipAttachment(
+        fileName: (json['file_name'] as String?) ?? '',
+        mimeType: (json['mime_type'] as String?) ?? '',
+        fileSize: _intValue(json['file_size']) ?? 0,
+        base64: (json['attachment_base64'] as String?) ?? '',
+      ));
+    }
+
     return HealthTip(
       id: (json['id'] as String?) ?? '',
       title: (json['title'] as String?) ?? '',
       description: (json['description'] as String?) ?? '',
-      fileName: (json['file_name'] as String?) ?? '',
-      mimeType: (json['mime_type'] as String?) ?? '',
-      fileSize: _intValue(json['file_size']) ?? 0,
-      attachmentBase64: (json['attachment_base64'] as String?) ?? '',
+      attachments: attachmentsList,
       createdByEmail: (json['created_by_email'] as String?) ?? '',
       createdAt: createdAt,
       updatedAt: _dateTimeValue(json['updated_at']) ?? createdAt,
@@ -477,6 +568,9 @@ class HealthSubmission {
     this.editHistory = const [],
     this.aiGuidance,
     this.lastError,
+    this.isDeleted = false,
+    this.deletedAt,
+    this.deletedBy,
   });
 
   final String clientSubmissionId;
@@ -500,6 +594,9 @@ class HealthSubmission {
   final List<ReportEditHistoryEntry> editHistory;
   final AiHealthGuidance? aiGuidance;
   final String? lastError;
+  final bool isDeleted;
+  final DateTime? deletedAt;
+  final String? deletedBy;
 
   DateTime get effectiveUpdatedAt => updatedAt ?? createdAt;
 
@@ -524,6 +621,9 @@ class HealthSubmission {
     List<ReportEditHistoryEntry>? editHistory,
     Object? aiGuidance = _unchanged,
     Object? lastError = _unchanged,
+    bool? isDeleted,
+    Object? deletedAt = _unchanged,
+    Object? deletedBy = _unchanged,
   }) => HealthSubmission(
     clientSubmissionId: clientSubmissionId,
     respondentName: respondentName ?? this.respondentName,
@@ -556,6 +656,13 @@ class HealthSubmission {
     lastError: identical(lastError, _unchanged)
         ? this.lastError
         : lastError as String?,
+    isDeleted: isDeleted ?? this.isDeleted,
+    deletedAt: identical(deletedAt, _unchanged)
+        ? this.deletedAt
+        : deletedAt as DateTime?,
+    deletedBy: identical(deletedBy, _unchanged)
+        ? this.deletedBy
+        : deletedBy as String?,
   );
 
   HealthSubmission withEditHistory({
@@ -598,6 +705,9 @@ class HealthSubmission {
     'edit_history': editHistory.map((entry) => entry.toJson()).toList(),
     'ai_health_guidance': aiGuidance?.toJson(),
     'last_error': lastError,
+    'is_deleted': isDeleted,
+    'deleted_at': deletedAt?.toIso8601String(),
+    'deleted_by': deletedBy,
   };
 
   Map<String, dynamic> toRpcPayload() {
@@ -620,6 +730,9 @@ class HealthSubmission {
       'edit_history': editHistory.map((entry) => entry.toJson()).toList(),
       'ai_health_guidance': aiGuidance?.toJson(),
       'client_updated_at': effectiveUpdatedAt.toIso8601String(),
+      'is_deleted': isDeleted,
+      'deleted_at': deletedAt?.toIso8601String(),
+      'deleted_by': deletedBy,
     };
     payload['survey_data'] = surveyData;
     return payload;
@@ -660,6 +773,9 @@ class HealthSubmission {
       editHistory: _editHistoryList(json['edit_history']),
       aiGuidance: _aiGuidanceFromJson(json, payload, surveyData),
       lastError: json['last_error'] as String?,
+      isDeleted: (json['is_deleted'] as bool?) ?? false,
+      deletedAt: _dateTimeValue(json['deleted_at']),
+      deletedBy: json['deleted_by'] as String?,
     );
   }
 
@@ -671,6 +787,9 @@ class HealthSubmission {
         'updated_at': _clientUpdatedAtFromPayload(json) ?? json['updated_at'],
         'remote_updated_at': json['updated_at'] ?? json['submitted_at'],
         'last_error': null,
+        'is_deleted': json['is_deleted'] ?? false,
+        'deleted_at': json['deleted_at'],
+        'deleted_by': json['deleted_by'],
       });
 
   bool hasSameAssessmentContent(HealthSubmission other) {

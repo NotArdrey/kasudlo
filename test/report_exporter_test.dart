@@ -474,7 +474,7 @@ Map<String, dynamic> _sampleSurveyData() {
     'midwife_count_per_population': '1:1000',
     'other_rhu_team_count_per_population': '2 BHWs per purok',
     'existing_manpower_development_policies':
-        'Quarterly barangay health worker training',
+        'Quarterly barangay health nurse training',
     'rhu_physicians_schedule': 'Monday 9 AM',
     'rhu_nurse_schedule': 'Tuesday 9 AM',
     'bhc_midwife_schedule': 'Wednesday 9 AM',

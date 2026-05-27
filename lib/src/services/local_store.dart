@@ -14,10 +14,12 @@ class LocalStore {
   static const _healthTipsSeededKey = '__kasudlo_health_tips_seeded';
   static const _healthTipsKey = '__kasudlo_health_tips';
   static const _preferencesKey = '__kasudlo_preferences';
+  static const _offlineUsersKey = '__kasudlo_offline_users';
 
   static Database? _database;
   static final Map<String, HealthSubmission> _submissionCache = {};
   static final Map<String, HealthTip> _healthTipCache = {};
+  static final Map<String, OfflineUserCache> _offlineUserCache = {};
   static AppPreferences _preferencesCache = const AppPreferences();
   static bool _demoSeededCache = false;
   static bool _healthTipsSeededCache = false;
@@ -42,6 +44,7 @@ class LocalStore {
     _database = null;
     _submissionCache.clear();
     _healthTipCache.clear();
+    _offlineUserCache.clear();
     _preferencesCache = const AppPreferences();
     _demoSeededCache = false;
     _healthTipsSeededCache = false;
@@ -159,6 +162,21 @@ class LocalStore {
     _preferencesCache = preferences;
   }
 
+  static OfflineUserCache? getOfflineUser(String email) {
+    _requireDatabase();
+    return _offlineUserCache[email.trim().toLowerCase()];
+  }
+
+  static Future<void> cacheOfflineUser(OfflineUserCache user) async {
+    final database = _requireDatabase();
+    _offlineUserCache[user.email.trim().toLowerCase()] = user;
+    await _putKeyValue(
+      database,
+      _offlineUsersKey,
+      jsonEncode(_offlineUserCache.values.map((u) => u.toJson()).toList()),
+    );
+  }
+
   static bool hasSeededDemoData() {
     _requireDatabase();
     return _demoSeededCache;
@@ -211,6 +229,7 @@ class LocalStore {
     final database = _requireDatabase();
     _submissionCache.clear();
     _healthTipCache.clear();
+    _offlineUserCache.clear();
 
     final rows = await database.query(_submissionsTable);
     for (final row in rows) {
@@ -239,6 +258,11 @@ class LocalStore {
       if (key == _healthTipsKey && value is String) {
         for (final healthTip in _healthTipsFromJson(value)) {
           _healthTipCache[healthTip.id] = healthTip;
+        }
+      }
+      if (key == _offlineUsersKey && value is String) {
+        for (final user in _offlineUsersFromJson(value)) {
+          _offlineUserCache[user.email.trim().toLowerCase()] = user;
         }
       }
     }
@@ -301,6 +325,22 @@ class LocalStore {
             .whereType<Map>()
             .map((item) => HealthTip.fromJson(Map<String, dynamic>.from(item)))
             .where((tip) => tip.id.trim().isNotEmpty)
+            .toList();
+      }
+    } catch (_) {
+      return const [];
+    }
+    return const [];
+  }
+
+  static List<OfflineUserCache> _offlineUsersFromJson(String value) {
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((item) => OfflineUserCache.fromJson(Map<String, dynamic>.from(item)))
+            .where((user) => user.email.trim().isNotEmpty)
             .toList();
       }
     } catch (_) {

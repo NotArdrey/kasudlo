@@ -9,36 +9,55 @@ class AppPage extends StatelessWidget {
     required this.children,
     this.subtitle,
     this.actions = const [],
+    this.controller,
+    this.floatingActionButton,
   });
 
   final String title;
   final String? subtitle;
   final List<Widget> children;
   final List<Widget> actions;
+  final ScrollController? controller;
+  final Widget? floatingActionButton;
 
   @override
   Widget build(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
+    return Scaffold(
+      floatingActionButton: floatingActionButton,
+      body: CustomScrollView(
+        controller: controller,
+        slivers: [
         SliverAppBar(
           pinned: true,
+          backgroundColor: KasudloColors.primary,
+          iconTheme: const IconThemeData(color: Colors.white),
+          actionsIconTheme: const IconThemeData(color: Colors.white),
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(title),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               if (subtitle != null)
                 Text(
                   subtitle!,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelMedium?.copyWith(color: KasudloColors.muted),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                  ),
                 ),
             ],
           ),
           actions: actions,
         ),
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
           sliver: SliverList.separated(
             itemBuilder: (context, index) => children[index],
             separatorBuilder: (context, index) => const SizedBox(height: 16),
@@ -46,6 +65,7 @@ class AppPage extends StatelessWidget {
           ),
         ),
       ],
+    ),
     );
   }
 }
@@ -58,10 +78,28 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: padding ?? const EdgeInsets.all(16),
-        child: child,
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withValues(alpha: 0.15),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.white,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          side: BorderSide(color: Colors.grey.shade200),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Padding(
+          padding: padding ?? const EdgeInsets.all(20),
+          child: child,
+        ),
       ),
     );
   }

@@ -21,6 +21,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _confirmPasswordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   _LoginMode _mode = _LoginMode.signIn;
+  bool _obscurePassword = true;
+  bool _obscureNewPassword = true;
+  bool _obscureConfirmPassword = true;
 
   @override
   void dispose() {
@@ -54,21 +57,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const _LogoMark(),
-                    const SizedBox(height: 28),
-                    Text(
-                      'KASUDLO',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineLarge,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Community health data gathering',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: KasudloColors.muted,
-                      ),
-                    ),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 24),
                     if (controller.isPasswordRecoverySession)
                       _buildPasswordUpdateForm(controller)
                     else if (_mode == _LoginMode.requestReset)
@@ -105,10 +94,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         const SizedBox(height: 14),
         TextFormField(
           controller: _passwordController,
-          obscureText: true,
-          decoration: const InputDecoration(
+          obscureText: _obscurePassword,
+          decoration: InputDecoration(
             labelText: 'Password',
-            prefixIcon: Icon(Icons.lock_outline),
+            prefixIcon: const Icon(Icons.lock_outline),
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscurePassword
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+              ),
+              onPressed: () =>
+                  setState(() => _obscurePassword = !_obscurePassword),
+            ),
           ),
           validator: (value) => value == null || value.length < 6
               ? 'Use at least 6 characters'
@@ -116,10 +114,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ),
         Align(
           alignment: Alignment.centerRight,
-          child: TextButton.icon(
+          child: TextButton(
             onPressed: controller.isBusy ? null : _showResetRequest,
-            icon: const Icon(Icons.help_outline, size: 18),
-            label: const Text('Forgot password?'),
+            child: const Text('Forgot password?'),
           ),
         ),
         const SizedBox(height: 8),
@@ -138,16 +135,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           errorMessage: controller.errorMessage,
           successMessage: controller.passwordResetMessage,
         ),
-        if (!controller.isSupabaseConfigured)
-          const _AccessNote(
-            text:
-                'Local mode active. Add Supabase dart-defines for live login.',
-          )
-        else
-          const _AccessNote(
-            text:
-                'Authorized accounts are created by an admin. Collect data with consent.',
-          ),
       ],
     );
   }
@@ -223,10 +210,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         const SizedBox(height: 18),
         TextFormField(
           controller: _newPasswordController,
-          obscureText: true,
-          decoration: const InputDecoration(
+          obscureText: _obscureNewPassword,
+          decoration: InputDecoration(
             labelText: 'New password',
-            prefixIcon: Icon(Icons.lock_reset),
+            prefixIcon: const Icon(Icons.lock_reset),
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscureNewPassword
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+              ),
+              onPressed: () =>
+                  setState(() => _obscureNewPassword = !_obscureNewPassword),
+            ),
           ),
           validator: (value) => value == null || value.length < 6
               ? 'Use at least 6 characters'
@@ -235,10 +231,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         const SizedBox(height: 14),
         TextFormField(
           controller: _confirmPasswordController,
-          obscureText: true,
-          decoration: const InputDecoration(
+          obscureText: _obscureConfirmPassword,
+          decoration: InputDecoration(
             labelText: 'Confirm password',
-            prefixIcon: Icon(Icons.lock_outline),
+            prefixIcon: const Icon(Icons.lock_outline),
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscureConfirmPassword
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+              ),
+              onPressed: () => setState(
+                  () => _obscureConfirmPassword = !_obscureConfirmPassword),
+            ),
           ),
           validator: (value) {
             if (value == null || value.isEmpty) {
@@ -389,18 +394,10 @@ class _LogoMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Container(
-        width: 84,
-        height: 84,
-        decoration: BoxDecoration(
-          color: KasudloColors.primary,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const Icon(
-          Icons.health_and_safety_outlined,
-          color: Colors.white,
-          size: 44,
-        ),
+      child: Image.asset(
+        'assets/images/kasudlo_logo.png',
+        width: 120,
+        height: 120,
       ),
     );
   }

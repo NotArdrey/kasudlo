@@ -25,61 +25,46 @@ class HealthTipsScreen extends ConsumerWidget {
     final healthTips = controller.healthTips;
 
     return AppPage(
-      title: 'Health Teaching',
-      subtitle: canManage ? 'Upload guidance and files' : 'Care guidance',
-      actions: [
-        IconButton(
-          tooltip: 'Refresh health teaching',
-          onPressed: controller.isHealthTipsLoading
-              ? null
-              : () => ref.read(appControllerProvider).loadHealthTips(),
-          icon: const Icon(Icons.refresh),
-        ),
-        if (canManage)
-          IconButton(
-            tooltip: 'Add health teaching',
-            onPressed: controller.isHealthTipActionBusy
-                ? null
-                : () => _openEditor(context, null),
-            icon: const Icon(Icons.add),
-          ),
-      ],
-      children: [
-        if (controller.healthTipsErrorMessage != null)
-          AppCard(
-            child: Text(
-              controller.healthTipsErrorMessage!,
-              style: const TextStyle(color: KasudloColors.critical),
-            ),
-          ),
-        if (controller.isHealthTipsLoading)
-          const AppCard(child: LinearProgressIndicator()),
-        if (canManage)
-          AppCard(
-            child: ElevatedButton.icon(
+      floatingActionButton: canManage
+          ? FloatingActionButton.extended(
+              backgroundColor: KasudloColors.primary,
+              foregroundColor: Colors.white,
               onPressed: controller.isHealthTipActionBusy
                   ? null
                   : () => _openEditor(context, null),
-              icon: const Icon(Icons.upload_file),
-              label: const Text('Upload Health Teaching'),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Teaching'),
+            )
+          : null,
+      title: 'Health Teaching',
+      subtitle: canManage ? 'Upload guidance and files' : 'Care guidance',
+      children: [
+          if (controller.healthTipsErrorMessage != null)
+            AppCard(
+              child: Text(
+                controller.healthTipsErrorMessage!,
+                style: const TextStyle(color: KasudloColors.critical),
+              ),
             ),
-          ),
-        if (healthTips.isEmpty)
-          const EmptyState(
-            icon: Icons.tips_and_updates_outlined,
-            title: 'No health teaching yet',
-            message: 'Health teaching from the care team will appear here.',
-          )
-        else
-          for (final healthTip in healthTips)
-            _HealthTipCard(
-              healthTip: healthTip,
-              canManage: canManage,
-              onEdit: () => _openEditor(context, healthTip),
+          if (controller.isHealthTipsLoading)
+            const AppCard(child: LinearProgressIndicator()),
+
+          if (healthTips.isEmpty)
+            const EmptyState(
+              icon: Icons.tips_and_updates_outlined,
+              title: 'No health teaching yet',
+              message: 'Health teaching from the care team will appear here.',
+            )
+          else
+            for (final healthTip in healthTips)
+              _HealthTipCard(
+                healthTip: healthTip,
+                canManage: canManage,
+                onEdit: () => _openEditor(context, healthTip),
               onDelete: () => _confirmDelete(context, ref, healthTip),
-              onDownload: () => _downloadAttachment(context, healthTip),
-            ),
-      ],
+                onDownload: (attachment) => _downloadAttachment(context, attachment),
+              ),
+        ],
     );
   }
 
@@ -143,9 +128,9 @@ class HealthTipsScreen extends ConsumerWidget {
 
   Future<void> _downloadAttachment(
     BuildContext context,
-    HealthTip healthTip,
+    HealthTipAttachment attachment,
   ) async {
-    final bytes = _attachmentBytes(healthTip);
+    final bytes = _attachmentBytes(attachment);
     if (bytes == null) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -155,10 +140,10 @@ class HealthTipsScreen extends ConsumerWidget {
 
     final savedPath = await saveExportFile(
       bytes: bytes,
-      fileName: healthTip.fileName,
-      mimeType: healthTip.mimeType.isEmpty
+      fileName: attachment.fileName,
+      mimeType: attachment.mimeType.isEmpty
           ? 'application/octet-stream'
-          : healthTip.mimeType,
+          : attachment.mimeType,
     );
     if (!context.mounted) {
       return;
@@ -184,10 +169,7 @@ class _HealthTipEditorDialogState
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
-  late String _fileName;
-  late String _mimeType;
-  late int _fileSize;
-  late String _attachmentBase64;
+  late List<HealthTipAttachment> _attachments;
 
   @override
   void initState() {
@@ -197,10 +179,7 @@ class _HealthTipEditorDialogState
     _descriptionController = TextEditingController(
       text: initial?.description ?? '',
     );
-    _fileName = initial?.fileName ?? '';
-    _mimeType = initial?.mimeType ?? '';
-    _fileSize = initial?.fileSize ?? 0;
-    _attachmentBase64 = initial?.attachmentBase64 ?? '';
+    _attachments = initial?.attachments.toList() ?? [];
   }
 
   @override
@@ -245,12 +224,19 @@ class _HealthTipEditorDialogState
                   ),
                 ),
                 const SizedBox(height: 12),
-                _AttachmentEditorSummary(
-                  fileName: _fileName,
-                  fileSize: _fileSize,
-                  hasAttachment: _attachmentBase64.isNotEmpty,
-                  onAttach: _attachFile,
-                  onRemove: _removeAttachment,
+                if (_attachments.isNotEmpty) ...[
+                  for (final attachment in _attachments) ...[
+                    _AttachmentEditorSummary(
+                      attachment: attachment,
+                      onRemove: () => _removeAttachment(attachment),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ],
+                OutlinedButton.icon(
+                  onPressed: _attachFile,
+                  icon: const Icon(Icons.attach_file),
+                  label: const Text('Add Attachment'),
                 ),
                 if (controller.healthTipsErrorMessage != null) ...[
                   const SizedBox(height: 12),
@@ -297,10 +283,12 @@ class _HealthTipEditorDialogState
         return;
       }
       setState(() {
-        _fileName = picked!.fileName;
-        _mimeType = picked.mimeType;
-        _fileSize = picked.bytes.length;
-        _attachmentBase64 = base64Encode(picked.bytes);
+        _attachments.add(HealthTipAttachment(
+          fileName: picked!.fileName,
+          mimeType: picked.mimeType,
+          fileSize: picked.bytes.length,
+          base64: base64Encode(picked.bytes),
+        ));
       });
     } catch (error) {
       if (mounted) {
@@ -335,12 +323,9 @@ class _HealthTipEditorDialogState
     ).whenComplete(pathController.dispose);
   }
 
-  void _removeAttachment() {
+  void _removeAttachment(HealthTipAttachment attachment) {
     setState(() {
-      _fileName = '';
-      _mimeType = '';
-      _fileSize = 0;
-      _attachmentBase64 = '';
+      _attachments.remove(attachment);
     });
   }
 
@@ -355,10 +340,7 @@ class _HealthTipEditorDialogState
           id: widget.initialHealthTip?.id,
           title: _titleController.text,
           description: _descriptionController.text,
-          fileName: _fileName,
-          mimeType: _mimeType,
-          fileSize: _fileSize,
-          attachmentBase64: _attachmentBase64,
+          attachments: _attachments,
         );
     if (mounted && saved) {
       Navigator.of(context).pop(true);
@@ -374,17 +356,11 @@ class _HealthTipEditorDialogState
 
 class _AttachmentEditorSummary extends StatelessWidget {
   const _AttachmentEditorSummary({
-    required this.fileName,
-    required this.fileSize,
-    required this.hasAttachment,
-    required this.onAttach,
+    required this.attachment,
     required this.onRemove,
   });
 
-  final String fileName;
-  final int fileSize;
-  final bool hasAttachment;
-  final VoidCallback onAttach;
+  final HealthTipAttachment attachment;
   final VoidCallback onRemove;
 
   @override
@@ -405,38 +381,28 @@ class _AttachmentEditorSummary extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    hasAttachment ? fileName : 'No attachment',
+                    attachment.fileName,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.labelLarge,
                   ),
                 ),
-                if (hasAttachment)
-                  Text(
-                    _formatFileSize(fileSize),
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: KasudloColors.muted,
-                    ),
+                Text(
+                  _formatFileSize(attachment.fileSize),
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: KasudloColors.muted,
                   ),
+                ),
               ],
             ),
             const SizedBox(height: 12),
             Row(
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onAttach,
-                    icon: const Icon(Icons.upload_file),
-                    label: Text(hasAttachment ? 'Replace' : 'Attach File'),
-                  ),
+                IconButton(
+                  tooltip: 'Remove attachment',
+                  onPressed: onRemove,
+                  icon: const Icon(Icons.delete_outline),
                 ),
-                if (hasAttachment) ...[
-                  const SizedBox(width: 10),
-                  IconButton(
-                    tooltip: 'Remove attachment',
-                    onPressed: onRemove,
-                    icon: const Icon(Icons.delete_outline),
-                  ),
-                ],
               ],
             ),
           ],
@@ -459,28 +425,42 @@ class _HealthTipCard extends StatelessWidget {
   final bool canManage;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
-  final VoidCallback onDownload;
+  final void Function(HealthTipAttachment) onDownload;
 
   @override
   Widget build(BuildContext context) {
     final updatedAt = DateFormat(
       'MMM d, yyyy h:mm a',
     ).format(healthTip.updatedAt.toLocal());
-    final imageBytes = healthTip.isImage ? _attachmentBytes(healthTip) : null;
+    final imageAttachments = healthTip.imageAttachments;
+    final fileAttachments = healthTip.fileAttachments;
 
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (imageBytes != null) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Image.memory(
-                imageBytes,
-                height: 180,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) =>
-                    const _BrokenAttachmentPreview(),
+          if (imageAttachments.isNotEmpty) ...[
+            SizedBox(
+              height: 180,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: imageAttachments.length,
+                separatorBuilder: (context, index) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final attachment = imageAttachments[index];
+                  final bytes = _attachmentBytes(attachment);
+                  if (bytes == null) return const _BrokenAttachmentPreview();
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: Image.memory(
+                      bytes,
+                      height: 180,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const _BrokenAttachmentPreview(),
+                    ),
+                  );
+                },
               ),
             ),
             const SizedBox(height: 12),
@@ -537,9 +517,15 @@ class _HealthTipCard extends StatelessWidget {
             const SizedBox(height: 12),
             Text(healthTip.description),
           ],
-          if (healthTip.hasAttachment) ...[
+          if (fileAttachments.isNotEmpty) ...[
             const SizedBox(height: 12),
-            _AttachmentTile(healthTip: healthTip, onDownload: onDownload),
+            for (final attachment in fileAttachments) ...[
+              _AttachmentTile(
+                attachment: attachment,
+                onDownload: () => onDownload(attachment),
+              ),
+              const SizedBox(height: 8),
+            ],
           ],
         ],
       ),
@@ -548,9 +534,9 @@ class _HealthTipCard extends StatelessWidget {
 }
 
 class _AttachmentTile extends StatelessWidget {
-  const _AttachmentTile({required this.healthTip, required this.onDownload});
+  const _AttachmentTile({required this.attachment, required this.onDownload});
 
-  final HealthTip healthTip;
+  final HealthTipAttachment attachment;
   final VoidCallback onDownload;
 
   @override
@@ -563,11 +549,11 @@ class _AttachmentTile extends StatelessWidget {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 12),
         leading: Icon(
-          healthTip.isImage ? Icons.image_outlined : Icons.description_outlined,
+          attachment.isImage ? Icons.image_outlined : Icons.description_outlined,
           color: KasudloColors.primary,
         ),
-        title: Text(healthTip.fileName, overflow: TextOverflow.ellipsis),
-        subtitle: Text(_formatFileSize(healthTip.fileSize)),
+        title: Text(attachment.fileName, overflow: TextOverflow.ellipsis),
+        subtitle: Text(_formatFileSize(attachment.fileSize)),
         trailing: IconButton(
           tooltip: 'Save attachment',
           onPressed: onDownload,
@@ -595,12 +581,9 @@ class _BrokenAttachmentPreview extends StatelessWidget {
   }
 }
 
-Uint8List? _attachmentBytes(HealthTip healthTip) {
-  if (!healthTip.hasAttachment) {
-    return null;
-  }
+Uint8List? _attachmentBytes(HealthTipAttachment attachment) {
   try {
-    return base64Decode(healthTip.attachmentBase64);
+    return base64Decode(attachment.base64);
   } catch (_) {
     return null;
   }

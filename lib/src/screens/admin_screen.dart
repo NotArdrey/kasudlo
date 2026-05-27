@@ -21,7 +21,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   final _passwordController = TextEditingController();
   final _searchController = TextEditingController();
   final _auditSearchController = TextEditingController();
-  AccountRole _selectedRole = AccountRole.worker;
+  AccountRole _selectedRole = AccountRole.nurse;
   bool _obscurePassword = true;
 
   @override
@@ -57,7 +57,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         .where((user) => user.role == AccountRole.admin)
         .length;
     final workerCount = controller.adminUsers
-        .where((user) => user.role == AccountRole.worker)
+        .where((user) => user.role == AccountRole.nurse)
         .length;
     final patientCount = controller.adminUsers
         .where((user) => user.role == AccountRole.patient)
@@ -85,7 +85,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         _AdminMetrics(
           total: controller.adminUsers.length,
           admins: adminCount,
-          workers: workerCount,
+          nurses: workerCount,
           patients: patientCount,
         ),
         _CreateAccountCard(
@@ -175,7 +175,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     _nameController.clear();
     _emailController.clear();
     _passwordController.clear();
-    setState(() => _selectedRole = AccountRole.worker);
+    setState(() => _selectedRole = AccountRole.nurse);
     await controller.loadAdminUsers(search: _searchController.text.trim());
 
     if (!mounted) {
@@ -432,13 +432,13 @@ class _AdminMetrics extends StatelessWidget {
   const _AdminMetrics({
     required this.total,
     required this.admins,
-    required this.workers,
+    required this.nurses,
     required this.patients,
   });
 
   final int total;
   final int admins;
-  final int workers;
+  final int nurses;
   final int patients;
 
   @override
@@ -457,8 +457,8 @@ class _AdminMetrics extends StatelessWidget {
         color: KasudloColors.secondary,
       ),
       _MetricData(
-        label: 'Workers',
-        value: '$workers',
+        label: 'Nurses',
+        value: '$nurses',
         icon: Icons.health_and_safety_outlined,
         color: KasudloColors.primary,
       ),
@@ -590,8 +590,8 @@ class _CreateAccountCard extends StatelessWidget {
                     ),
                     items: const [
                       DropdownMenuItem(
-                        value: AccountRole.worker,
-                        child: Text('Worker'),
+                        value: AccountRole.nurse,
+                        child: Text('Nurse'),
                       ),
                       DropdownMenuItem(
                         value: AccountRole.patient,
@@ -616,8 +616,8 @@ class _CreateAccountCard extends StatelessWidget {
                   showSelectedIcon: false,
                   segments: const [
                     ButtonSegment(
-                      value: AccountRole.worker,
-                      label: Text('Worker'),
+                      value: AccountRole.nurse,
+                      label: Text('Nurse'),
                       icon: Icon(Icons.health_and_safety_outlined),
                     ),
                     ButtonSegment(
@@ -833,13 +833,13 @@ class _UserList extends StatelessWidget {
   Color _roleColor(AccountRole role) => switch (role) {
     AccountRole.admin => KasudloColors.secondary,
     AccountRole.patient => KasudloColors.warning,
-    AccountRole.worker => KasudloColors.primary,
+    AccountRole.nurse => KasudloColors.primary,
   };
 
   IconData _roleIcon(AccountRole role) => switch (role) {
     AccountRole.admin => Icons.admin_panel_settings_outlined,
     AccountRole.patient => Icons.person_outline,
-    AccountRole.worker => Icons.health_and_safety_outlined,
+    AccountRole.nurse => Icons.health_and_safety_outlined,
   };
 }
 

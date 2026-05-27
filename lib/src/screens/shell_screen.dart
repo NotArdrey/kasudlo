@@ -26,26 +26,35 @@ class ShellScreen extends ConsumerWidget {
           selectedIcon: Icons.admin_panel_settings,
           label: 'Admin',
         ),
-      const _NavItem(
-        branchIndex: 2,
-        icon: Icons.assignment_outlined,
-        selectedIcon: Icons.assignment,
-        label: 'Collect',
-      ),
+      if (!controller.isPatient)
+        const _NavItem(
+          branchIndex: 2,
+          icon: Icons.bar_chart_outlined,
+          selectedIcon: Icons.bar_chart,
+          label: 'Reports',
+        ),
       const _NavItem(
         branchIndex: 3,
-        icon: Icons.bar_chart_outlined,
-        selectedIcon: Icons.bar_chart,
-        label: 'Reports',
-      ),
-      const _NavItem(
-        branchIndex: 4,
         icon: Icons.tips_and_updates_outlined,
         selectedIcon: Icons.tips_and_updates,
         label: 'Teaching',
       ),
+      if (controller.isPatient) ...[
+        const _NavItem(
+          branchIndex: 4,
+          icon: Icons.medical_information_outlined,
+          selectedIcon: Icons.medical_information,
+          label: 'Findings',
+        ),
+        const _NavItem(
+          branchIndex: 5,
+          icon: Icons.contact_phone_outlined,
+          selectedIcon: Icons.contact_phone,
+          label: 'Contact',
+        ),
+      ],
       const _NavItem(
-        branchIndex: 5,
+        branchIndex: 6,
         icon: Icons.settings_outlined,
         selectedIcon: Icons.settings,
         label: 'Settings',

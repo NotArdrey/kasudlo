@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:uuid/uuid.dart';
@@ -22,6 +24,11 @@ class AppController extends ChangeNotifier {
   StreamSubscription<String?>? _passwordRecoverySubscription;
   bool _isSyncInProgress = false;
 
+  String _hashCredential(String email, String password) {
+    final bytes = utf8.encode('${email.trim().toLowerCase()}|$password');
+    return sha256.convert(bytes).toString();
+  }
+
   bool isReady = false;
   bool isBusy = false;
   bool isSignedIn = false;
@@ -33,7 +40,8 @@ class AppController extends ChangeNotifier {
   bool isHealthTipsLoading = false;
   bool isHealthTipActionBusy = false;
   String? activeEmail;
-  AccountRole activeRole = AccountRole.worker;
+  String? activeFullName;
+  AccountRole activeRole = AccountRole.nurse;
   String? errorMessage;
   String? adminErrorMessage;
   String? auditErrorMessage;
@@ -44,10 +52,13 @@ class AppController extends ChangeNotifier {
   List<HealthTip> healthTips = const [];
   List<AdminUser> adminUsers = const [];
   List<AuditLogEntry> auditLogs = const [];
+  List<HealthSubmission> patientFindings = const [];
+  bool isPatientFindingsLoading = false;
   String? passwordResetMessage;
 
   bool get isSupabaseConfigured => SupabaseGateway.isConfigured;
   bool get isAdmin => activeRole == AccountRole.admin;
+  bool get isPatient => activeRole == AccountRole.patient;
   bool get canManageHealthTips => activeRole != AccountRole.patient;
   int get conflictCount => submissions
       .where((submission) => submission.syncStatus == SyncStatus.conflict)
@@ -61,10 +72,15 @@ class AppController extends ChangeNotifier {
             submission.syncStatus == SyncStatus.pending ||
             submission.syncStatus == SyncStatus.failed ||
             submission.syncStatus == SyncStatus.syncing ||
-            submission.syncStatus == SyncStatus.conflict,
+            submission.syncStatus == SyncStatus.conflict ||
+            submission.syncStatus == SyncStatus.pendingDelete,
       )
       .length;
-  ReportSummary get summary => ReportSummary.fromSubmissions(submissions);
+  
+  List<HealthSubmission> get activeSubmissions => 
+      submissions.where((s) => !s.isDeleted).toList();
+
+  ReportSummary get summary => ReportSummary.fromSubmissions(activeSubmissions);
 
   Future<void> bootstrap() async {
     _startPasswordRecoveryWatcher();
@@ -77,7 +93,7 @@ class AppController extends ChangeNotifier {
         await LocalStore.markDemoDataSeeded();
         submissions = LocalStore.loadSubmissions();
       } else {
-        await _refreshLornaCruzDemoDetails();
+        await _refreshDemoDetailsIfNeeded();
       }
       await _seedLocalHealthTipsIfNeeded();
     }
@@ -87,7 +103,7 @@ class AppController extends ChangeNotifier {
         isSupabaseConfigured && SupabaseGateway.isPasswordRecoverySession;
     isSignedIn = user != null && !isPasswordRecoverySession;
     activeEmail = user?.email;
-    activeRole = AccountRole.worker;
+    activeRole = AccountRole.nurse;
     if (user != null && isSupabaseConfigured && !isPasswordRecoverySession) {
       await _loadActiveProfile(fallbackEmail: user.email);
       await _refreshRemoteSubmissions();
@@ -96,43 +112,87 @@ class AppController extends ChangeNotifier {
     }
     isReady = true;
     _startConnectivitySyncWatcher();
+    if (activeRole == AccountRole.patient) {
+      await loadPatientFindings();
+    }
     notifyListeners();
   }
 
   Future<void> signIn(String email, String password) async {
     await _runBusy(() async {
+      bool useLocal = !isSupabaseConfigured;
+
       if (isSupabaseConfigured) {
-        await SupabaseGateway.signIn(email: email, password: password);
-        isPasswordRecoverySession = false;
-        await _loadActiveProfile(
-          fallbackEmail: SupabaseGateway.currentUser?.email ?? email,
-        );
-        isSignedIn = true;
-        await _logAuditEvent(
-          action: 'auth.sign_in',
-          entityType: 'session',
-          summary: 'Signed in to KASUDLO.',
-        );
-        await _refreshRemoteSubmissions();
-        await _refreshRemoteHealthTips();
-        await syncPending();
-      } else {
-        final normalizedEmail = email.trim().isEmpty
-            ? 'local-demo@kasudlo.app'
-            : email.trim();
-        activeEmail = normalizedEmail;
-        final roleHint = normalizedEmail.toLowerCase();
-        activeRole = roleHint.startsWith('admin')
-            ? AccountRole.admin
-            : roleHint.startsWith('patient')
-            ? AccountRole.patient
-            : AccountRole.worker;
+        try {
+          await SupabaseGateway.signIn(email: email, password: password);
+          isPasswordRecoverySession = false;
+          await _loadActiveProfile(
+            fallbackEmail: SupabaseGateway.currentUser?.email ?? email,
+          );
+          
+          if (activeEmail != null) {
+            await LocalStore.cacheOfflineUser(OfflineUserCache(
+              id: SupabaseGateway.currentUser?.id ?? _uuid.v4(),
+              email: activeEmail!,
+              role: activeRole,
+              credentialHash: _hashCredential(activeEmail!, password),
+              lastLoginAt: DateTime.now().toUtc(),
+            ));
+          }
+
+          isSignedIn = true;
+          await _logAuditEvent(
+            action: 'auth.sign_in',
+            entityType: 'session',
+            summary: 'Signed in to KASUDLO.',
+          );
+          await _refreshRemoteSubmissions();
+          await _refreshRemoteHealthTips();
+          await syncPending();
+          return;
+        } catch (e) {
+          final errorStr = e.toString().toLowerCase();
+          if (errorStr.contains('socket') ||
+              errorStr.contains('clientexception') ||
+              errorStr.contains('failed host lookup') ||
+              errorStr.contains('network') ||
+              errorStr.contains('offline')) {
+            useLocal = true;
+          } else {
+            rethrow;
+          }
+        }
+      }
+
+      if (useLocal) {
+        final normalizedEmail = email.trim();
+        final offlineUser = LocalStore.getOfflineUser(normalizedEmail);
+        
+        if (offlineUser == null) {
+          if (normalizedEmail.isEmpty || normalizedEmail == 'local-demo@kasudlo.app') {
+            throw StateError('Invalid email or password.');
+          }
+          throw StateError('Offline login is only allowed for users who have previously logged in online on this device.');
+        }
+        
+        final expectedHash = _hashCredential(normalizedEmail, password);
+        if (offlineUser.credentialHash != expectedHash) {
+          throw StateError('Invalid email or password.');
+        }
+        
+        final thirtyDaysAgo = DateTime.now().toUtc().subtract(const Duration(days: 30));
+        if (offlineUser.lastLoginAt.isBefore(thirtyDaysAgo)) {
+          throw StateError('Offline session expired. Please connect to the internet to log in again.');
+        }
+
+        activeEmail = offlineUser.email;
+        activeRole = offlineUser.role;
         isSignedIn = true;
         await _seedLocalHealthTipsIfNeeded();
         await _logAuditEvent(
           action: 'auth.sign_in',
           entityType: 'session',
-          summary: 'Signed in to KASUDLO.',
+          summary: 'Signed in to KASUDLO in local mode.',
         );
       }
     });
@@ -150,7 +210,8 @@ class AppController extends ChangeNotifier {
       isSignedIn = false;
       isPasswordRecoverySession = false;
       activeEmail = null;
-      activeRole = AccountRole.worker;
+      activeFullName = null;
+      activeRole = AccountRole.nurse;
       healthTipsErrorMessage = null;
       adminUsers = const [];
       auditLogs = const [];
@@ -193,7 +254,7 @@ class AppController extends ChangeNotifier {
       SupabaseGateway.clearPasswordRecoverySession();
       isPasswordRecoverySession = false;
       isSignedIn = false;
-      activeRole = AccountRole.worker;
+      activeRole = AccountRole.nurse;
       passwordResetMessage =
           'Password updated. Sign in with your new password.';
     });
@@ -307,6 +368,27 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  Future<void> loadPatientFindings() async {
+    if (!isPatient) {
+      patientFindings = const [];
+      notifyListeners();
+      return;
+    }
+
+    isPatientFindingsLoading = true;
+    notifyListeners();
+    try {
+      if (isSupabaseConfigured && isSignedIn) {
+        patientFindings = await SupabaseGateway.fetchPatientFindings();
+      }
+    } catch (error) {
+      if (kDebugMode) debugPrint('Unable to fetch patient findings: $error');
+    } finally {
+      isPatientFindingsLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<bool> createAdminAccount({
     required String fullName,
     required String email,
@@ -381,10 +463,7 @@ class AppController extends ChangeNotifier {
     String? id,
     required String title,
     required String description,
-    required String fileName,
-    required String mimeType,
-    required int fileSize,
-    required String attachmentBase64,
+    required List<HealthTipAttachment> attachments,
   }) async {
     if (!canManageHealthTips) {
       healthTipsErrorMessage =
@@ -403,10 +482,7 @@ class AppController extends ChangeNotifier {
         id: previous?.id ?? id ?? _uuid.v4(),
         title: title.trim(),
         description: description.trim(),
-        fileName: fileName.trim(),
-        mimeType: mimeType.trim(),
-        fileSize: fileSize,
-        attachmentBase64: attachmentBase64.trim(),
+        attachments: attachments,
         createdAt: previous?.createdAt ?? now,
         updatedAt: now,
         createdByEmail: previous?.createdByEmail ?? activeEmail ?? '',
@@ -773,15 +849,30 @@ class AppController extends ChangeNotifier {
         break;
       }
     }
-    await LocalStore.deleteSubmission(clientSubmissionId);
+    
+    if (deleted == null) return;
+
+    if (deleted.remoteUpdatedAt == null) {
+      await LocalStore.deleteSubmission(clientSubmissionId);
+    } else {
+      final softDeleted = deleted.copyWith(
+        isDeleted: true,
+        deletedAt: DateTime.now().toUtc(),
+        deletedBy: activeEmail,
+        syncStatus: SyncStatus.pendingDelete,
+        updatedAt: DateTime.now().toUtc(),
+      );
+      await LocalStore.upsertSubmission(softDeleted);
+    }
+
     _reloadSubmissions();
+    unawaited(syncPending());
+
     await _logAuditEvent(
       action: 'report.record.delete',
       entityType: 'household_assessment',
       entityId: clientSubmissionId,
-      summary: deleted == null
-          ? 'Deleted report record.'
-          : 'Deleted report record for ${deleted.respondentName}.',
+      summary: 'Deleted report record for ${deleted.respondentName}.',
     );
   }
 
@@ -824,7 +915,8 @@ class AppController extends ChangeNotifier {
     isPasswordRecoverySession = true;
     isSignedIn = false;
     activeEmail = email ?? SupabaseGateway.currentUser?.email;
-    activeRole = AccountRole.worker;
+    activeFullName = null;
+    activeRole = AccountRole.nurse;
     errorMessage = null;
     passwordResetMessage = 'Choose a new password for this account.';
     notifyListeners();
@@ -882,7 +974,16 @@ class AppController extends ChangeNotifier {
     }
 
     try {
-      final remoteHealthTips = await SupabaseGateway.listHealthTips();
+      var remoteHealthTips = await SupabaseGateway.listHealthTips();
+      
+      // If remote is empty but we have local tips (e.g. created in local mode), upload them
+      if (remoteHealthTips.isEmpty && healthTips.isNotEmpty) {
+        for (final tip in healthTips) {
+          await SupabaseGateway.upsertHealthTip(tip);
+        }
+        remoteHealthTips = await SupabaseGateway.listHealthTips();
+      }
+
       await LocalStore.saveHealthTips(remoteHealthTips);
       healthTips = LocalStore.loadHealthTips();
       if (logView) {
@@ -1004,7 +1105,8 @@ class AppController extends ChangeNotifier {
   bool _isRetryableSyncStatus(SyncStatus status) {
     return status == SyncStatus.pending ||
         status == SyncStatus.failed ||
-        status == SyncStatus.syncing;
+        status == SyncStatus.syncing ||
+        status == SyncStatus.pendingDelete;
   }
 
   bool _hasUnsentLocalWork(HealthSubmission submission) {
@@ -1136,10 +1238,14 @@ class AppController extends ChangeNotifier {
       activeEmail = profile?.email.trim().isNotEmpty == true
           ? profile!.email
           : fallbackEmail?.trim();
-      activeRole = profile?.role ?? AccountRole.worker;
+      activeFullName = profile?.fullName.trim().isNotEmpty == true
+          ? profile!.fullName
+          : null;
+      activeRole = profile?.role ?? AccountRole.nurse;
     } catch (_) {
       activeEmail = fallbackEmail?.trim();
-      activeRole = AccountRole.worker;
+      activeFullName = null;
+      activeRole = AccountRole.nurse;
     }
   }
 
@@ -1201,10 +1307,7 @@ class AppController extends ChangeNotifier {
         title: 'Hydration during field days',
         description:
             'Drink safe water regularly, especially during hot barangay visits. Watch for dizziness, dry mouth, and dark urine.',
-        fileName: '',
-        mimeType: '',
-        fileSize: 0,
-        attachmentBase64: '',
+        attachments: const [],
         createdAt: now.subtract(const Duration(days: 3)),
         updatedAt: now.subtract(const Duration(days: 3)),
         createdByEmail: activeEmail ?? 'local-demo@kasudlo.app',
@@ -1214,10 +1317,7 @@ class AppController extends ChangeNotifier {
         title: 'Dengue prevention checklist',
         description:
             'Remove standing water, cover containers, and seek care quickly for persistent fever, severe headache, or bleeding symptoms.',
-        fileName: '',
-        mimeType: '',
-        fileSize: 0,
-        attachmentBase64: '',
+        attachments: const [],
         createdAt: now.subtract(const Duration(days: 1)),
         updatedAt: now.subtract(const Duration(days: 1)),
         createdByEmail: activeEmail ?? 'local-demo@kasudlo.app',
@@ -1228,65 +1328,11 @@ class AppController extends ChangeNotifier {
   List<HealthSubmission> _demoSubmissions() {
     final now = DateTime.now();
     return [
-      HealthSubmission(
-        clientSubmissionId: 'demo-household-001',
-        respondentName: 'Maria Santos',
-        respondentAge: 42,
-        address: 'Barangay San Isidro',
-        familyMembersCount: 5,
-        familyMembers: const [
-          FamilyMember(
-            name: 'Carlos Santos',
-            age: 45,
-            relationship: 'Spouse',
-            healthProblems: ['Hypertension'],
-            vaccinationStatus: 'Complete',
-            nutritionalStatus: 'Normal',
-          ),
-          FamilyMember(
-            name: 'Ana Santos',
-            age: 12,
-            relationship: 'Child',
-            healthProblems: [],
-            vaccinationStatus: 'Complete',
-            nutritionalStatus: 'Normal',
-          ),
-        ],
-        healthProblems: const ['Hypertension', 'Diabetes'],
-        vaccinationStatus: 'Complete',
-        waterSanitation: 'Safe water and sanitary toilet',
-        nutritionalStatus: 'Normal',
-        communityConcerns: const ['Dengue risk', 'Limited clinic access'],
-        consentGiven: true,
-        notes: 'Needs BP follow-up during next barangay visit.',
+      _mariaSantosDemoSubmission(
         createdAt: now.subtract(const Duration(days: 2, hours: 3)),
-        syncStatus: SyncStatus.synced,
       ),
-      HealthSubmission(
-        clientSubmissionId: 'demo-household-002',
-        respondentName: 'Jun Reyes',
-        respondentAge: 31,
-        address: 'Purok 3, Barangay Mabini',
-        familyMembersCount: 4,
-        familyMembers: const [
-          FamilyMember(
-            name: 'Mila Reyes',
-            age: 28,
-            relationship: 'Spouse',
-            healthProblems: ['Cough or fever'],
-            vaccinationStatus: 'Incomplete',
-            nutritionalStatus: 'At risk',
-          ),
-        ],
-        healthProblems: const ['Asthma', 'Cough or fever'],
-        vaccinationStatus: 'Incomplete',
-        waterSanitation: 'Unsafe water source',
-        nutritionalStatus: 'At risk',
-        communityConcerns: const ['Low vaccination', 'Unsafe water'],
-        consentGiven: true,
-        notes: 'Water source needs sanitation referral.',
+      _junReyesDemoSubmission(
         createdAt: now.subtract(const Duration(days: 1, hours: 6)),
-        syncStatus: SyncStatus.pending,
       ),
       _lornaCruzDemoSubmission(
         createdAt: now.subtract(const Duration(hours: 8)),
@@ -1294,27 +1340,208 @@ class AppController extends ChangeNotifier {
     ];
   }
 
-  Future<void> _refreshLornaCruzDemoDetails() async {
-    final current = _submissionById('demo-household-003');
-    if (current == null || !_needsLornaCruzDetailsRefresh(current)) {
-      return;
+  Future<void> _refreshDemoDetailsIfNeeded() async {
+    bool didUpdate = false;
+
+    final lorna = _submissionById('demo-household-003');
+    if (lorna != null && _needsDemoDetailsRefresh(lorna)) {
+      await LocalStore.upsertSubmission(
+        _lornaCruzDemoSubmission(
+          createdAt: lorna.createdAt,
+          syncStatus: lorna.syncStatus,
+        ).copyWith(
+          editHistory: lorna.editHistory,
+          lastError: lorna.lastError,
+        ),
+      );
+      didUpdate = true;
     }
 
-    await LocalStore.upsertSubmission(
-      _lornaCruzDemoSubmission(
-        createdAt: current.createdAt,
-        syncStatus: current.syncStatus,
-      ).copyWith(
-        editHistory: current.editHistory,
-        lastError: current.lastError,
-      ),
-    );
-    submissions = LocalStore.loadSubmissions();
+    final maria = _submissionById('demo-household-001');
+    if (maria != null && _needsDemoDetailsRefresh(maria)) {
+      await LocalStore.upsertSubmission(
+        _mariaSantosDemoSubmission(
+          createdAt: maria.createdAt,
+          syncStatus: maria.syncStatus,
+        ).copyWith(
+          editHistory: maria.editHistory,
+          lastError: maria.lastError,
+        ),
+      );
+      didUpdate = true;
+    }
+
+    final jun = _submissionById('demo-household-002');
+    if (jun != null && _needsDemoDetailsRefresh(jun)) {
+      await LocalStore.upsertSubmission(
+        _junReyesDemoSubmission(
+          createdAt: jun.createdAt,
+          syncStatus: jun.syncStatus,
+        ).copyWith(
+          editHistory: jun.editHistory,
+          lastError: jun.lastError,
+        ),
+      );
+      didUpdate = true;
+    }
+
+    if (didUpdate) {
+      submissions = LocalStore.loadSubmissions();
+    }
   }
 
-  bool _needsLornaCruzDetailsRefresh(HealthSubmission submission) {
-    return submission.respondentName == 'Lorna Cruz' &&
-        (submission.familyMembers.length < 2 || submission.surveyData.isEmpty);
+  bool _needsDemoDetailsRefresh(HealthSubmission submission) {
+    return true;
+  }
+
+  HealthSubmission _mariaSantosDemoSubmission({
+    required DateTime createdAt,
+    SyncStatus syncStatus = SyncStatus.synced,
+  }) {
+    final familyRows = [
+      {
+        'member_no': 1,
+        'name_of_family_member': 'Carlos Santos',
+        'relationship_to_head': 'Spouse',
+        'gender': 'Male',
+        'age': 45,
+        'birthdate_month': 10,
+        'birthdate_day': 12,
+        'birthdate_year': 1980,
+        'marital_status': 'Married',
+        'religion': 'Roman Catholic',
+        'highest_educational_completed': 'College Graduate',
+        'occupation_status': 'Employed',
+        'place_of_work_location': 'Outside the community',
+        'place_of_work_category': 'Office',
+        'place_of_origin': 'Metro Manila',
+        'length_of_residence': '10 years',
+      },
+      {
+        'member_no': 2,
+        'name_of_family_member': 'Ana Santos',
+        'relationship_to_head': 'Child',
+        'gender': 'Female',
+        'age': 12,
+        'birthdate_month': 5,
+        'birthdate_day': 20,
+        'birthdate_year': 2014,
+        'marital_status': 'Single',
+        'religion': 'Roman Catholic',
+        'highest_educational_completed': 'Elementary Level',
+        'occupation_status': 'Student',
+        'place_of_work_location': 'Within the community',
+        'place_of_work_category': 'School',
+        'place_of_origin': 'Metro Manila',
+        'length_of_residence': '10 years',
+      }
+    ];
+
+    final surveyData = _lornaCruzSurveyData(familyRows)..addAll({
+      'control_no': 'CTRL-001',
+      'number_of_family': 5,
+      'address': 'Barangay San Isidro',
+      'first_visit_date': '2026-05-20',
+      'informant': 'Maria Santos',
+      'surveyed_by': 'Nurse John',
+      'time_started': '10:00',
+      'time_finished': '11:00',
+      'status_of_last_visit': 'Completed',
+    });
+
+    return HealthSubmission(
+      clientSubmissionId: 'demo-household-001',
+      respondentName: 'Maria Santos',
+      respondentAge: 42,
+      address: 'Barangay San Isidro',
+      familyMembersCount: 5,
+      familyMembers: familyRows.map(FamilyMember.fromSurveyData).toList(),
+      healthProblems: const ['Hypertension', 'Diabetes'],
+      vaccinationStatus: 'Complete',
+      waterSanitation: 'Safe water and sanitary toilet',
+      nutritionalStatus: 'Normal',
+      communityConcerns: const ['Dengue risk', 'Limited clinic access'],
+      surveyData: surveyData,
+      consentGiven: true,
+      notes: 'Needs BP follow-up during next barangay visit.',
+      createdAt: createdAt,
+      syncStatus: syncStatus,
+    );
+  }
+
+  HealthSubmission _junReyesDemoSubmission({
+    required DateTime createdAt,
+    SyncStatus syncStatus = SyncStatus.pending,
+  }) {
+    final familyRows = [
+      {
+        'member_no': 1,
+        'name_of_family_member': 'Mila Reyes',
+        'relationship_to_head': 'Spouse',
+        'gender': 'Female',
+        'age': 28,
+        'birthdate_month': 3,
+        'birthdate_day': 15,
+        'birthdate_year': 1998,
+        'marital_status': 'Married',
+        'religion': 'Iglesia ni Cristo',
+        'highest_educational_completed': 'High School Graduate',
+        'occupation_status': 'Unemployed',
+        'place_of_work_location': 'Within the community',
+        'place_of_work_category': 'In-House',
+        'place_of_origin': 'Visayas',
+        'length_of_residence': '5 years',
+      },
+      {
+        'member_no': 2,
+        'name_of_family_member': 'Jun Reyes',
+        'relationship_to_head': 'Head',
+        'gender': 'Male',
+        'age': 31,
+        'birthdate_month': 7,
+        'birthdate_day': 22,
+        'birthdate_year': 1994,
+        'marital_status': 'Married',
+        'religion': 'Iglesia ni Cristo',
+        'highest_educational_completed': 'College Undergraduate',
+        'occupation_status': 'Employed',
+        'place_of_work_location': 'Within the community',
+        'place_of_work_category': 'Construction',
+        'place_of_origin': 'Visayas',
+        'length_of_residence': '5 years',
+      }
+    ];
+
+    final surveyData = _lornaCruzSurveyData(familyRows)..addAll({
+      'control_no': 'CTRL-002',
+      'number_of_family': 4,
+      'address': 'Purok 3, Barangay Mabini',
+      'first_visit_date': '2026-05-21',
+      'informant': 'Jun Reyes',
+      'surveyed_by': 'Nurse Sarah',
+      'time_started': '14:00',
+      'time_finished': '15:30',
+      'status_of_last_visit': 'Completed',
+    });
+
+    return HealthSubmission(
+      clientSubmissionId: 'demo-household-002',
+      respondentName: 'Jun Reyes',
+      respondentAge: 31,
+      address: 'Purok 3, Barangay Mabini',
+      familyMembersCount: 4,
+      familyMembers: familyRows.map(FamilyMember.fromSurveyData).toList(),
+      healthProblems: const ['Asthma', 'Cough or fever'],
+      vaccinationStatus: 'Incomplete',
+      waterSanitation: 'Unsafe water source',
+      nutritionalStatus: 'At risk',
+      communityConcerns: const ['Low vaccination', 'Unsafe water'],
+      surveyData: surveyData,
+      consentGiven: true,
+      notes: 'Water source needs sanitation referral.',
+      createdAt: createdAt,
+      syncStatus: syncStatus,
+    );
   }
 
   HealthSubmission _lornaCruzDemoSubmission({
@@ -1507,7 +1734,43 @@ class AppController extends ChangeNotifier {
           'reason': 'Does not drink',
         },
       ],
-      'anthropometric_data_under_5': [],
+      'bought_food_source': ['Carinderia'],
+      'reason_for_bought_food_option': ['Convenient', 'Cheaper'],
+      'antenatal_registrations': [
+        {
+          'name': 'Lorna Cruz',
+          'aog': '20 weeks',
+          'prenatal_checkup_with_regular': true,
+          'prenatal_checkup_with_not_regular': false,
+          'prenatal_checkup_without': false,
+          'tetanus_vaccination_with': true,
+          'tetanus_vaccination_without': false,
+        }
+      ],
+      'communicable_disease_records': [
+        {
+          'name': 'Rica Cruz',
+          'age': 9,
+          'gender': 'Female',
+          'cd': 'Chickenpox',
+        }
+      ],
+      'anthropometric_data_under_5': [
+        {
+          'name': 'Rica Cruz',
+          'age_in_months': 108,
+          'weight_kg': 25.5,
+          'height_m': 1.2,
+          'bmi': 17.7,
+          'bmi_remarks': 'Normal',
+          'waist_circumference_cm': 55.0,
+          'hip_circumference_cm': 65.0,
+          'waist_hip_ratio': 0.84,
+          'waist_hip_ratio_remarks': 'Normal',
+          'mid_upper_arm_circumference': 16.5,
+          'mid_upper_arm_remarks': 'Normal',
+        }
+      ],
       'food_recall_24_hour': [
         {
           'date': '2026-05-23',
@@ -1571,13 +1834,12 @@ class AppController extends ChangeNotifier {
           'fully_immunized_child': true,
         },
       ],
-      'antenatal_registrations': [],
       'family_planning_eligible': false,
       'family_planning_status': 'Non-Acceptor',
       'family_planning_non_acceptor_reasons': ['Bad for health of family'],
-      'permanent_method_female_sterilization_btl': false,
+      'permanent_method_female_sterilization_btl': true,
       'permanent_method_male_sterilization_vasectomy': false,
-      'supply_method_pills': false,
+      'supply_method_pills': true,
       'supply_method_iud': false,
       'supply_method_injectable': false,
       'supply_method_condoms': false,
@@ -1599,7 +1861,14 @@ class AppController extends ChangeNotifier {
           'not_admitted': true,
         },
       ],
-      'mortality_records': [],
+      'mortality_records': [
+        {
+          'name': 'Pedro Cruz',
+          'age': 65,
+          'gender': 'Male',
+          'cause_of_death': 'Heart Attack',
+        },
+      ],
       'non_communicable_disease_records': [
         {
           'name': 'Lorna Cruz',
@@ -1614,7 +1883,6 @@ class AppController extends ChangeNotifier {
           'ncd': 'Arthritis',
         },
       ],
-      'communicable_disease_records': [],
       'blood_pressure_records': [
         {'name': 'Lorna Cruz', 'age': 65, 'gender': 'Female', 'bp': '150/90'},
       ],

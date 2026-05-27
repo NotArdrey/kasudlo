@@ -16,7 +16,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-type AccountRole = "worker" | "patient" | "admin";
+type AccountRole = "nurse" | "patient" | "admin";
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -47,7 +47,7 @@ function normalizeText(value: unknown) {
 
 function parseRole(value: unknown): AccountRole | null {
   const role = normalizeText(value).toLowerCase();
-  return role === "worker" || role === "patient" || role === "admin"
+  return role === "nurse" || role === "patient" || role === "admin"
     ? role
     : null;
 }

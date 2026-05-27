@@ -202,25 +202,44 @@ String _surveyDocumentSection(HealthSubmission submission, int sectionIndex) {
     ..writeln(_sectionHeading('Type of Family'))
     ..writeln(
       _paragraph(
-        'Based on composition: ( ) Nuclear   ( ) Extended   ( ) Dyad   ( ) Homosexual/Same Sex   ( ) Cohabiting/Communal   ( ) Blended Family   ( ) Living with Grandparent(s)   ( ) Single-parent',
+        'Based on composition: '
+        '${_docxCheckbox(submission, 'family_composition_type', 'Nuclear')}   '
+        '${_docxCheckbox(submission, 'family_composition_type', 'Extended')}   '
+        '${_docxCheckbox(submission, 'family_composition_type', 'Dyad')}   '
+        '${_docxCheckbox(submission, 'family_composition_type', 'Homosexual/Same Sex')}   '
+        '${_docxCheckbox(submission, 'family_composition_type', 'Cohabiting/Communal')}   '
+        '${_docxCheckbox(submission, 'family_composition_type', 'Blended Family')}   '
+        '${_docxCheckbox(submission, 'family_composition_type', 'Living with Grandparent(s)')}   '
+        '${_docxCheckbox(submission, 'family_composition_type', 'Single-parent')}',
       ),
     )
     ..writeln(
       _paragraph(
-        'Based on locus of power: ( ) Patrifocal/Patriarchal   ( ) Matrifocal/Matriachial   ( ) Egalitarian   ( ) Matricentric',
+        'Based on locus of power: '
+        '${_docxCheckbox(submission, 'family_locus_of_power', 'Patrifocal/Patriarchal')}   '
+        '${_docxCheckbox(submission, 'family_locus_of_power', 'Matrifocal/Matriarchal')}   '
+        '${_docxCheckbox(submission, 'family_locus_of_power', 'Egalitarian')}   '
+        '${_docxCheckbox(submission, 'family_locus_of_power', 'Matricentric')}',
       ),
     )
     ..writeln(
       _paragraph(
-        'Based on place of residence: ( ) Patrilocal   ( ) Matrilocal   ( ) Bilocal (Ambilocal)   ( ) Neolocal',
+        'Based on place of residence: '
+        '${_docxCheckbox(submission, 'family_place_of_residence', 'Patrilocal')}   '
+        '${_docxCheckbox(submission, 'family_place_of_residence', 'Matrilocal')}   '
+        '${_docxCheckbox(submission, 'family_place_of_residence', 'Bilocal/Ambilocal')}   '
+        '${_docxCheckbox(submission, 'family_place_of_residence', 'Neolocal')}',
       ),
     )
     ..writeln(
       _paragraph(
-        'Based on descent: ( ) Patrilineal   ( ) Matrilineal   ( ) Bilateral',
+        'Based on descent: '
+        '${_docxCheckbox(submission, 'family_descent', 'Patrilineal')}   '
+        '${_docxCheckbox(submission, 'family_descent', 'Matrilineal')}   '
+        '${_docxCheckbox(submission, 'family_descent', 'Bilateral')}',
       ),
     )
-    ..writeln(_paragraph('Dialect Frequently used:'))
+    ..writeln(_paragraph('Dialect Frequently used: ${_surveyString(submission.surveyData, 'dialect_frequently_used')}'))
     ..writeln(_sectionHeading('II. Socio-economic, cultural and environmental'))
     ..writeln(
       _table([
@@ -278,7 +297,10 @@ String _surveyDocumentSection(HealthSubmission submission, int sectionIndex) {
         ['Person mostly consulted in times of sickness', ''],
         ['Measures taken in times of sickness', ''],
         ['Medication / treatment', ''],
-        ['Medical / Dental Check-up', ''],
+        [
+          'Medical / Dental Check-up',
+          'Medical: ${_surveyString(submission.surveyData, 'medical_checkup_frequency')}\nDental: ${_surveyString(submission.surveyData, 'dental_checkup_frequency')}'
+        ],
       ]),
     )
     ..writeln(_sectionHeading('Community Health programs'))
@@ -880,7 +902,7 @@ String _table(
   final buffer = StringBuffer()
     ..writeln('<w:tbl>')
     ..writeln(
-      '<w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders></w:tblPr>',
+      '<w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:left w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="000000"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="000000"/></w:tblBorders></w:tblPr>',
     );
 
   for (var rowIndex = 0; rowIndex < rows.length; rowIndex++) {
@@ -941,6 +963,13 @@ String _xmlEscape(String value) => const HtmlEscape().convert(value);
 String _valueOrBlank(String value) => value.trim();
 
 String _listOrBlank(List<String> values) => values.join(', ');
+
+String _docxCheckbox(HealthSubmission submission, String key, String choice, [String? label]) {
+  final text = label ?? choice;
+  return _surveyHasChoice(submission.surveyData, key, choice)
+      ? '(X) $text'
+      : '( ) $text';
+}
 
 class _SurveyExportSection {
   const _SurveyExportSection({required this.title, required this.rows});
@@ -1459,7 +1488,7 @@ List<pw.Widget> _templatePageOneOverlay(HealthSubmission submission) {
       ..add(
         _templateText(
           row[4],
-          220.5,
+          226.0,
           top,
           width: 19.5,
           size: 5.0,
@@ -1489,7 +1518,7 @@ List<pw.Widget> _templatePageOneOverlay(HealthSubmission submission) {
       ..add(
         _templateText(
           row[7],
-          285.5,
+          295.0,
           top,
           width: 21.5,
           size: 4.6,
@@ -1569,7 +1598,7 @@ List<pw.Widget> _templatePageOneOverlay(HealthSubmission submission) {
       ..add(
         _templateText(
           row[15],
-          530.0,
+          538.0,
           top,
           width: 24.0,
           size: 4.8,
@@ -1579,7 +1608,7 @@ List<pw.Widget> _templatePageOneOverlay(HealthSubmission submission) {
       ..add(
         _templateText(
           row[16],
-          555.0,
+          562.0,
           top,
           width: 25.0,
           size: 4.4,
@@ -1660,7 +1689,7 @@ List<pw.Widget> _templatePageTwoOverlay(HealthSubmission submission) {
     _addTemplateMarkIf(
       widgets,
       _surveyString(data, key).trim().isNotEmpty,
-      left,
+      left + 2.5,
       top,
       value: _surveyString(data, key),
       size: 6.4,
@@ -1675,7 +1704,7 @@ List<pw.Widget> _templatePageTwoOverlay(HealthSubmission submission) {
   mark('family_descent', 'Patrilineal', 215, 138);
   mark('family_descent', 'Matrilineal', 388, 139);
   mark('family_descent', 'Bilateral', 560, 139);
-  text('dialect_frequently_used', 315, 177, width: 370);
+  text('dialect_frequently_used', 325, 177, width: 370);
 
   mark('services_in_community', 'Religious services', 330, 271);
   markAny(
@@ -1730,7 +1759,7 @@ List<pw.Widget> _templatePageTwoOverlay(HealthSubmission submission) {
   text('mode_of_communication_other', 570, 432, width: 160);
 
   final incomeEarners = _surveyMapRows(data['income_earners']);
-  text('income_earner_count', 380, 508, width: 28);
+  text('income_earner_count', 400, 508, width: 28);
   for (var index = 0; index < incomeEarners.length && index < 4; index++) {
     final row = incomeEarners[index];
     final top = 508.0 + index * 18.0;
@@ -1964,7 +1993,7 @@ List<pw.Widget> _templatePageThreeOverlay(HealthSubmission submission) {
   mark('water_storage', 'Large uncovered container without faucet', 157, 455);
   mark('water_storage', 'Others', 157, 471);
   text('water_storage_other', 285, 468, width: 300);
-  text('water_source_distance_from_house', 440, 489, width: 180);
+  text('water_source_distance_from_house', 440, 492, width: 180);
 
   mark('food_storage_cover_status', 'Covered', 272, 552);
   mark('food_storage_cover_status', 'Uncovered', 445, 552);
@@ -2564,9 +2593,9 @@ List<pw.Widget> _templatePageFiveOverlay(HealthSubmission submission) {
     final row = immunizationRows[index];
     final top = immunizationTop + immunizationRowHeight * index;
     widgets
-      ..add(_templateTextPx(row[0], 27, top, width: 80, size: 4.8))
+      ..add(_templateTextPx(row[0], 40, top, width: 80, size: 4.8))
       ..add(_templateTextPx(row[1], 118, top, width: 35, size: 4.8))
-      ..add(_templateTextPx(row[2], 160, top, width: 50, size: 4.4))
+      ..add(_templateTextPx(row[2], 170, top, width: 40, size: 4.4))
       ..add(
         _templateTextPx(
           _shortTemplateDateOrMark(row[3]),
@@ -2768,110 +2797,111 @@ List<pw.Widget> _templatePageFiveOverlay(HealthSubmission submission) {
     mark('family_planning_acceptor_reasons', 'Influence by others', 676, 676);
     mark('family_planning_acceptor_reasons', 'Others', 388, 693);
     text('family_planning_acceptor_reason_other', 510, 688, width: 120);
-
-    _addTemplateMarkIf(
-      widgets,
-      _yesNoMark(
-            data['permanent_method_female_sterilization_btl'],
-          ).isNotEmpty ||
-          _yesNoMark(
-            data['permanent_method_male_sterilization_vasectomy'],
-          ).isNotEmpty,
-      128,
-      824,
-    );
-    _addTemplateMarkIf(
-      widgets,
-      _yesNoMark(data['permanent_method_female_sterilization_btl']).isNotEmpty,
-      380,
-      824,
-    );
-    _addTemplateMarkIf(
-      widgets,
-      _yesNoMark(
-        data['permanent_method_male_sterilization_vasectomy'],
-      ).isNotEmpty,
-      704,
-      824,
-    );
-    final hasSupplyMethod = [
-      'supply_method_pills',
-      'supply_method_iud',
-      'supply_method_injectable',
-      'supply_method_condoms',
-      'supply_method_implant',
-    ].any((key) => _yesNoMark(data[key]).isNotEmpty);
-    _addTemplateMarkIf(widgets, hasSupplyMethod, 128, 842);
-    _addTemplateMarkIf(widgets, hasSupplyMethod, 157, 857);
-    _addTemplateMarkIf(
-      widgets,
-      _yesNoMark(data['supply_method_pills']).isNotEmpty,
-      480,
-      857,
-    );
-    _addTemplateMarkIf(
-      widgets,
-      _yesNoMark(data['supply_method_iud']).isNotEmpty,
-      532,
-      857,
-    );
-    _addTemplateMarkIf(
-      widgets,
-      _yesNoMark(data['supply_method_injectable']).isNotEmpty,
-      567,
-      857,
-    );
-    _addTemplateMarkIf(
-      widgets,
-      _yesNoMark(data['supply_method_condoms']).isNotEmpty,
-      669,
-      857,
-    );
-    _addTemplateMarkIf(
-      widgets,
-      _yesNoMark(data['supply_method_implant']).isNotEmpty,
-      756,
-      857,
-    );
-    final hasFertilityMethod = [
-      'fertility_method_cervical_mucus_billings',
-      'fertility_method_basal_body_temperature',
-      'fertility_method_sympto_thermal',
-      'fertility_method_standard_days',
-      'fertility_method_lactational_amenorrhea',
-    ].any((key) => _yesNoMark(data[key]).isNotEmpty);
-    _addTemplateMarkIf(widgets, hasFertilityMethod, 166, 890);
-    _addTemplateMarkIf(
-      widgets,
-      _yesNoMark(data['fertility_method_cervical_mucus_billings']).isNotEmpty,
-      480,
-      890,
-    );
-    _addTemplateMarkIf(
-      widgets,
-      _yesNoMark(data['fertility_method_basal_body_temperature']).isNotEmpty,
-      733,
-      890,
-    );
-    _addTemplateMarkIf(
-      widgets,
-      _yesNoMark(data['fertility_method_sympto_thermal']).isNotEmpty,
-      480,
-      908,
-    );
-    _addTemplateMarkIf(
-      widgets,
-      _yesNoMark(data['fertility_method_standard_days']).isNotEmpty,
-      733,
-      908,
-    );
-    _addTemplateMarkIf(
-      widgets,
-      _yesNoMark(data['fertility_method_lactational_amenorrhea']).isNotEmpty,
-      480,
-      925,
-    );
   }
+
+  _addTemplateMarkIf(
+    widgets,
+    _yesNoMark(
+          data['permanent_method_female_sterilization_btl'],
+        ).isNotEmpty ||
+        _yesNoMark(
+          data['permanent_method_male_sterilization_vasectomy'],
+        ).isNotEmpty,
+    128,
+    824,
+  );
+  _addTemplateMarkIf(
+    widgets,
+    _yesNoMark(data['permanent_method_female_sterilization_btl']).isNotEmpty,
+    380,
+    824,
+  );
+  _addTemplateMarkIf(
+    widgets,
+    _yesNoMark(
+      data['permanent_method_male_sterilization_vasectomy'],
+    ).isNotEmpty,
+    704,
+    824,
+  );
+  final hasSupplyMethod = [
+    'supply_method_pills',
+    'supply_method_iud',
+    'supply_method_injectable',
+    'supply_method_condoms',
+    'supply_method_implant',
+  ].any((key) => _yesNoMark(data[key]).isNotEmpty);
+  _addTemplateMarkIf(widgets, hasSupplyMethod, 128, 842);
+  _addTemplateMarkIf(widgets, hasSupplyMethod, 157, 857);
+  _addTemplateMarkIf(
+    widgets,
+    _yesNoMark(data['supply_method_pills']).isNotEmpty,
+    480,
+    857,
+  );
+  _addTemplateMarkIf(
+    widgets,
+    _yesNoMark(data['supply_method_iud']).isNotEmpty,
+    532,
+    857,
+  );
+  _addTemplateMarkIf(
+    widgets,
+    _yesNoMark(data['supply_method_injectable']).isNotEmpty,
+    567,
+    857,
+  );
+  _addTemplateMarkIf(
+    widgets,
+    _yesNoMark(data['supply_method_condoms']).isNotEmpty,
+    669,
+    857,
+  );
+  _addTemplateMarkIf(
+    widgets,
+    _yesNoMark(data['supply_method_implant']).isNotEmpty,
+    756,
+    857,
+  );
+  final hasFertilityMethod = [
+    'fertility_method_cervical_mucus_billings',
+    'fertility_method_basal_body_temperature',
+    'fertility_method_sympto_thermal',
+    'fertility_method_standard_days',
+    'fertility_method_lactational_amenorrhea',
+  ].any((key) => _yesNoMark(data[key]).isNotEmpty);
+  _addTemplateMarkIf(widgets, hasFertilityMethod, 166, 890);
+  _addTemplateMarkIf(
+    widgets,
+    _yesNoMark(data['fertility_method_cervical_mucus_billings']).isNotEmpty,
+    480,
+    890,
+  );
+  _addTemplateMarkIf(
+    widgets,
+    _yesNoMark(data['fertility_method_basal_body_temperature']).isNotEmpty,
+    733,
+    890,
+  );
+  _addTemplateMarkIf(
+    widgets,
+    _yesNoMark(data['fertility_method_sympto_thermal']).isNotEmpty,
+    480,
+    908,
+  );
+  _addTemplateMarkIf(
+    widgets,
+    _yesNoMark(data['fertility_method_standard_days']).isNotEmpty,
+    733,
+    908,
+  );
+  _addTemplateMarkIf(
+    widgets,
+    _yesNoMark(data['fertility_method_lactational_amenorrhea']).isNotEmpty,
+    480,
+    925,
+  );
+
   if (isFamilyPlanningNonAcceptor) {
     mark(
       'family_planning_non_acceptor_reasons',
@@ -2910,7 +2940,7 @@ List<pw.Widget> _templatePageFiveOverlay(HealthSubmission submission) {
   }
 
   final morbidityRows = _morbidityTemplateRows(submission);
-  const morbidityTop = 1038.0;
+  const morbidityTop = 1020.0;
   const morbidityRowHeight = 18.0;
   for (var index = 0; index < morbidityRows.length && index < 4; index++) {
     final row = morbidityRows[index];
@@ -3402,7 +3432,7 @@ void _addSurveyPdfPages(
 ) {
   final pages = [
     _surveyPdfPageOne(submission, universityLogo, collegeLogo),
-    _surveyPdfPageTwo(),
+    _surveyPdfPageTwo(submission),
     _surveyPdfPageThree(submission),
     _surveyPdfPageFour(submission),
     _surveyPdfPageFive(submission),
@@ -3444,7 +3474,12 @@ pw.Widget _surveyPdfPageOne(
   );
 }
 
-pw.Widget _surveyPdfPageTwo() {
+pw.Widget _surveyPdfPageTwo(HealthSubmission submission) {
+  String chk(String key, String choice, [String? label]) {
+    final text = label ?? choice.toLowerCase();
+    return _surveyHasChoice(submission.surveyData, key, choice) ? '(X) $text' : '( ) $text';
+  }
+
   return _pdfFormPage(
     pageNumber: '2',
     footerLeft: 'CDX Tool Revised: 01 / 02-16-2024',
@@ -3453,42 +3488,42 @@ pw.Widget _surveyPdfPageTwo() {
       pw.SizedBox(height: 10),
       _formText('Based on composition:'),
       _optionRow([
-        '( ) Nuclear',
-        '( ) Extended',
-        '( ) Dyad',
-        '( ) Homosexual/Same Sex',
+        chk('family_composition_type', 'Nuclear'),
+        chk('family_composition_type', 'Extended'),
+        chk('family_composition_type', 'Dyad'),
+        chk('family_composition_type', 'Homosexual/Same Sex'),
       ], leftIndent: 28),
       _optionRow([
-        '( ) Cohabiting/Communal',
-        '( ) Blended Family',
-        '( ) Living with Grandparent(s)',
-        '( ) Single- parent',
+        chk('family_composition_type', 'Cohabiting/Communal'),
+        chk('family_composition_type', 'Blended Family'),
+        chk('family_composition_type', 'Living with Grandparent(s)'),
+        chk('family_composition_type', 'Single-parent'),
       ], leftIndent: 28),
       pw.SizedBox(height: 6),
       _formText('Based on locus of power'),
       _optionRow([
-        '( ) Patrifocal/Patriarchal',
-        '( ) Matrifocal/Matriarchal',
-        '( ) Egalitarian',
-        '( ) Matricentric',
+        chk('family_locus_of_power', 'Patrifocal/Patriarchal'),
+        chk('family_locus_of_power', 'Matrifocal/Matriarchal'),
+        chk('family_locus_of_power', 'Egalitarian'),
+        chk('family_locus_of_power', 'Matricentric'),
       ], leftIndent: 28),
       pw.SizedBox(height: 6),
       _formText('Based on place of residence'),
       _optionRow([
-        '( ) Patrilocal',
-        '( ) Matrilocal',
-        '( ) Bilocal (Ambilocal)',
-        '( ) Neolocal',
+        chk('family_place_of_residence', 'Patrilocal'),
+        chk('family_place_of_residence', 'Matrilocal'),
+        chk('family_place_of_residence', 'Bilocal/Ambilocal'),
+        chk('family_place_of_residence', 'Neolocal'),
       ], leftIndent: 58),
       pw.SizedBox(height: 6),
       _formText('Based on descent'),
       _optionRow([
-        '( ) Patrilineal',
-        '( ) Matrilineal',
-        '( ) Bilateral',
+        chk('family_descent', 'Patrilineal'),
+        chk('family_descent', 'Matrilineal'),
+        chk('family_descent', 'Bilateral'),
       ], leftIndent: 58),
       pw.SizedBox(height: 10),
-      _inlineUnderline('b.    Dialect Frequently used:', '', width: 230),
+      _inlineUnderline('b.    Dialect Frequently used:', _surveyString(submission.surveyData, 'dialect_frequently_used'), width: 230),
       pw.SizedBox(height: 12),
       _formText(
         'II.  Socio- economic, cultural and environmental (Multiple Response)',
@@ -3517,89 +3552,89 @@ pw.Widget _surveyPdfPageTwo() {
         '( ) Others __________',
       ]),
       _choiceLine('D.', 'Tradition/Customs:', [
-        '( ) Bayanihan',
-        '( ) Palabra de Honor',
-        '( ) Pakikisama',
-        '( ) Ningas Kugon',
-        '( ) Fiestas',
-        '( ) Close family ties',
-        '( ) Respect for elderly',
-        '( ) Others____________',
+        chk('traditions_customs', 'Bayanihan'),
+        chk('traditions_customs', 'Palabra de Honor'),
+        chk('traditions_customs', 'Pakikisama'),
+        chk('traditions_customs', 'Ningas Kugon'),
+        chk('traditions_customs', 'Fiestas'),
+        chk('traditions_customs', 'Close family ties'),
+        chk('traditions_customs', 'Respect for elderly'),
+        chk('traditions_customs', 'Others', 'Others____________'),
       ]),
       _choiceLine('E.', 'Recreational Facilities:', [
-        '( ) Volleyball/Basketball court',
-        '( ) Playground',
-        '( ) Plaza',
-        '( ) Others_______________',
+        chk('recreational_facilities', 'Volleyball/Basketball court'),
+        chk('recreational_facilities', 'Playground'),
+        chk('recreational_facilities', 'Plaza'),
+        chk('recreational_facilities', 'Others', 'Others_______________'),
       ]),
       _choiceLine('F.', 'Mode of Transportation:', [
-        '( ) Tricycle',
-        '( ) Jeep',
-        '( ) PUJ/PUV',
-        '( ) Bicycle',
-        '( ) Private vehicle',
+        chk('transportation_modes', 'Tricycle'),
+        chk('transportation_modes', 'Jeep'),
+        chk('transportation_modes', 'PUJ/PUV'),
+        chk('transportation_modes', 'Bicycle'),
+        chk('transportation_modes', 'Private vehicle'),
       ]),
       _choiceLine('G.', 'Mode of Communication:', [
-        '( ) Postal system',
-        '( ) Internet',
-        '( ) Telephone',
-        '( ) Cell phone',
-        '( ) Two- way radio',
-        '( ) Others, specify: ____________',
+        chk('communication_modes', 'Postal system'),
+        chk('communication_modes', 'Internet'),
+        chk('communication_modes', 'Telephone'),
+        chk('communication_modes', 'Cell phone'),
+        chk('communication_modes', 'Two-way radio', 'Two- way radio'),
+        chk('communication_modes', 'Others', 'Others, specify: ____________'),
       ]),
       pw.SizedBox(height: 10),
       _underlinedTitle('2.    Economic Indicator:'),
       _incomeEarnersBlock(),
       pw.SizedBox(height: 6),
       _choiceLine('B.', 'Monthly Family Income (combined)', [
-        '( ) less than 5,000',
-        '( ) 5,001- 10,000',
-        '( ) 10,001- 15,000',
-        '( ) 15,001- 20,000',
-        '( ) 20,001- 25,000',
-        '( ) 25,001- 30,000',
-        '( ) 30,001- 35,000',
-        '( ) 35,001- 40,000',
-        '( ) 40,001- 45,000',
-        '( ) 45,001- 50,000',
-        '( ) 50,001 and above',
+        chk('monthly_family_income', 'Less than 5,000', 'less than 5,000'),
+        chk('monthly_family_income', '5,001 - 10,000', '5,001- 10,000'),
+        chk('monthly_family_income', '10,001 - 15,000', '10,001- 15,000'),
+        chk('monthly_family_income', '15,001 - 20,000', '15,001- 20,000'),
+        chk('monthly_family_income', '20,001 - 25,000', '20,001- 25,000'),
+        chk('monthly_family_income', '25,001 - 30,000', '25,001- 30,000'),
+        chk('monthly_family_income', '30,001 - 35,000', '30,001- 35,000'),
+        chk('monthly_family_income', '35,001 - 40,000', '35,001- 40,000'),
+        chk('monthly_family_income', '40,001 - 45,000', '40,001- 45,000'),
+        chk('monthly_family_income', '45,001 - 50,000', '45,001- 50,000'),
+        chk('monthly_family_income', '50,001 and above'),
       ]),
       _choiceLine('C.', 'Financial Source for Family expenditures:', [
-        '( ) Employment',
-        '( ) Business',
-        '( ) Pension',
-        '( ) Help from relative/friends',
-        '( ) Others:',
+        chk('financial_sources', 'Employment'),
+        chk('financial_sources', 'Business'),
+        chk('financial_sources', 'Pension'),
+        chk('financial_sources', 'Help from relative/friends'),
+        chk('financial_sources', 'Others', 'Others:'),
       ]),
       _choiceLine('D.', 'Monthly Family Expenditures:', [
-        '( ) less than 5,000',
-        '( ) 5,001- 10,000',
-        '( ) 10,001- 15,000',
-        '( ) 15,001- 20,000',
-        '( ) 20,001- 25,000',
-        '( ) 25,001- 30,000',
-        '( ) 30,001- 35,000',
-        '( ) 35,001- 40,000',
-        '( ) 40,001- 45,000',
-        '( ) 45,001- 50,000',
-        '( ) 50,001 and above',
+        chk('monthly_family_expenditures', 'Less than 5,000', 'less than 5,000'),
+        chk('monthly_family_expenditures', '5,001 - 10,000', '5,001- 10,000'),
+        chk('monthly_family_expenditures', '10,001 - 15,000', '10,001- 15,000'),
+        chk('monthly_family_expenditures', '15,001 - 20,000', '15,001- 20,000'),
+        chk('monthly_family_expenditures', '20,001 - 25,000', '20,001- 25,000'),
+        chk('monthly_family_expenditures', '25,001 - 30,000', '25,001- 30,000'),
+        chk('monthly_family_expenditures', '30,001 - 35,000', '30,001- 35,000'),
+        chk('monthly_family_expenditures', '35,001 - 40,000', '35,001- 40,000'),
+        chk('monthly_family_expenditures', '40,001 - 45,000', '40,001- 45,000'),
+        chk('monthly_family_expenditures', '45,001 - 50,000', '45,001- 50,000'),
+        chk('monthly_family_expenditures', '50,001 and above'),
       ]),
-      _choiceLine(
+      _choiceBlock(
         'E.',
         'Priorities and Expenditure ( family\'s priority by ranking 1-7 where 1 is the highest priority)',
         [
-          '( ) Food',
-          '( ) Clothing',
-          '( ) Education',
-          '( ) Utilities',
-          '( ) Health',
-          '( ) Recreation',
-          '( ) Savings',
+          chk('expenditure_priorities', 'Food'),
+          chk('expenditure_priorities', 'Clothing'),
+          chk('expenditure_priorities', 'Education'),
+          chk('expenditure_priorities', 'Utilities'),
+          chk('expenditure_priorities', 'Health'),
+          chk('expenditure_priorities', 'Recreation'),
+          chk('expenditure_priorities', 'Savings'),
         ],
       ),
       _choiceLine('F.', 'Adequacy of Family Income:', [
-        '( ) Adequate',
-        '( ) Not Adequate',
+        chk('income_adequacy', 'Adequate'),
+        chk('income_adequacy', 'Not Adequate'),
       ]),
       pw.SizedBox(height: 9),
       _underlinedTitle('3.    Cultural Indicator:'),
@@ -3607,29 +3642,35 @@ pw.Widget _surveyPdfPageTwo() {
         'A.',
         'Cultural Orientation regarding Illness (Multiple Response)',
         [
-          '( ) believe that illness is caused by physiologic factor e. g. infection',
-          '( ) believe that illness is caused by supernatural phenomenon e. g. kulam, balis',
-          '( ) believe that illness is a punishment from GOD',
-          '( ) believe that illness is caused by other person',
-          '( ) believe that illness is caused by change in weather',
-          '( ) others:________________',
+          chk('illness_cultural_orientation', 'Physiologic factor (e.g., infection)', 'believe that illness is caused by physiologic factor e. g. infection'),
+          chk('illness_cultural_orientation', 'Supernatural phenomenon (e.g., kulam, balis)', 'believe that illness is caused by supernatural phenomenon e. g. kulam, balis'),
+          chk('illness_cultural_orientation', 'Punishment from God', 'believe that illness is a punishment from GOD'),
+          chk('illness_cultural_orientation', 'Other person', 'believe that illness is caused by other person'),
+          chk('illness_cultural_orientation', 'Change in weather', 'believe that illness is caused by change in weather'),
+          chk('illness_cultural_orientation', 'Others', 'others:________________'),
         ],
       ),
-      _choiceLine('B.', 'Cultural Belief: (Multiple Response)', [
-        '( ) health can be restored by GOD/ other spiritual faith',
-        '( ) health can be restored by faith healers',
-        '( ) health can be restored by supernatural power e.g. tawas, nilot, hula',
-        '( ) health can be restored by health personnel e. g. doctors, nurses',
+      _choiceLine('B.', 'Beliefs on how health could be restored:', [
+        chk('health_restoration_beliefs', 'God/other spiritual faith', 'health can be restored by GOD/ other spiritual faith'),
+        chk('health_restoration_beliefs', 'Faith healers', 'health can be restored by faith healers'),
+        chk('health_restoration_beliefs', 'Supernatural power (e.g., tawas, hilot)', 'health can be restored by supernatural power e.g. tawas, nilot, hula'),
+        chk('health_restoration_beliefs', 'Health personnel (e.g., doctors, nurses)', 'health can be restored by health personnel e. g. doctors, nurses'),
       ]),
-      _choiceLine('C.', 'Cultural Perception', [
-        '( ) always practices local cultural practices about health matters',
-        '( ) sometimes practices local cultural practices about health matters',
+      _choiceLine('C.', 'Local cultural practices', [
+        chk('local_health_practices', 'Always practices', 'always practices local cultural practices about health matters'),
+        chk('local_health_practices', 'Sometimes practices', 'sometimes practices local cultural practices about health matters'),
+        chk('local_health_practices', 'Does not practice', 'does not practice any local cultural practices about health matters'),
       ]),
     ],
   );
 }
 
 pw.Widget _surveyPdfPageThree(HealthSubmission submission) {
+  String chk(String key, String choice, [String? label]) {
+    final text = label ?? choice.toLowerCase();
+    return _surveyHasChoice(submission.surveyData, key, choice) ? '(X) $text' : '( ) $text';
+  }
+
   return _pdfFormPage(
     pageNumber: '3',
     children: [
@@ -3646,136 +3687,136 @@ pw.Widget _surveyPdfPageThree(HealthSubmission submission) {
       pw.SizedBox(height: 6),
       _formText('A.    Home', italic: true),
       _choiceLine('a.', 'Ownership:', [
-        '( ) Owned',
-        '( ) Rented',
-        '( ) Rent- free',
-        '( ) Least to own',
-        '( ) squatting/informal settlers',
-        '( ) professional squatters',
+        chk('home_ownership', 'Owned'),
+        chk('home_ownership', 'Rented'),
+        chk('home_ownership', 'Rent-free', 'Rent- free'),
+        chk('home_ownership', 'Lease/Least to own', 'Least to own'),
+        chk('home_ownership', 'Squatting/informal settlers', 'squatting/informal settlers'),
+        chk('home_ownership', 'Professional squatters', 'professional squatters'),
       ], leftIndent: 28),
       _choiceLine('b.', 'Construction materials used:', [
-        '( ) Light',
-        '( ) Mixed',
-        '( ) Strong (Concrete)',
+        chk('home_construction_materials', 'Light'),
+        chk('home_construction_materials', 'Mixed'),
+        chk('home_construction_materials', 'Strong/Concrete', 'Strong (Concrete)'),
       ], leftIndent: 28),
       _choiceLine('c.', 'Number of rooms used for sleeping:', [
-        '( ) 1',
-        '( ) 2',
-        '( ) 3',
-        '( ) 4',
-        '( ) 5',
-        '( ) None (no partition)',
+        chk('sleeping_rooms_count', '1'),
+        chk('sleeping_rooms_count', '2'),
+        chk('sleeping_rooms_count', '3'),
+        chk('sleeping_rooms_count', '4'),
+        chk('sleeping_rooms_count', '5'),
+        chk('sleeping_rooms_count', 'None/no partition', 'None (no partition)'),
       ], leftIndent: 28),
       _choiceLine('d.', 'Adequacy of space:', [
-        '( ) Adequate',
-        '( ) Inadequate',
+        chk('home_space_adequacy', 'Adequate'),
+        chk('home_space_adequacy', 'Not Adequate', 'Inadequate'),
       ], leftIndent: 28),
       _choiceLine('e.', 'Lighting facility:', [
-        '( ) Electricity',
-        '( ) Kerosene',
-        '( ) Others, specify:',
+        chk('lighting_facility', 'Electricity'),
+        chk('lighting_facility', 'Kerosene'),
+        chk('lighting_facility', 'Others', 'Others, specify:'),
       ], leftIndent: 28),
       _choiceLine('f.', 'Adequacy of Lighting:', [
-        '( ) Adequate',
-        '( ) Inadequate',
+        chk('lighting_adequacy', 'Adequate'),
+        chk('lighting_adequacy', 'Not Adequate', 'Inadequate'),
       ], leftIndent: 28),
       _choiceLine('g.', 'Ventilation:', [
-        '( ) Adequate',
-        '( ) Inadequate',
+        chk('ventilation_adequacy', 'Adequate'),
+        chk('ventilation_adequacy', 'Not Adequate', 'Inadequate'),
       ], leftIndent: 28),
       _choiceLine('h.', 'General Sanitary condition:', [
         _filledChoiceText(submission.waterSanitation),
-        '( ) Generally clean',
-        '( ) Dirty',
+        chk('general_sanitary_condition', 'Generally clean'),
+        chk('general_sanitary_condition', 'Dirty'),
       ], leftIndent: 28),
       pw.SizedBox(height: 8),
       _formText('B.    Water Supply:', italic: true),
       _choiceLine('a.', 'Ownership:', [
-        '( ) Private',
-        '( ) Public',
+        chk('water_supply_ownership', 'Private'),
+        chk('water_supply_ownership', 'Public'),
       ], leftIndent: 28),
       _choiceLine(
         'b.',
         'Water Source:    NOTE: If deep well, proceed to letter "e".',
         [
-          'Cooking: ( ) Deep well   ( ) Local Water District   ( ) Commercial   ( ) Others:________',
-          'Drinking: ( ) Deep well   ( ) Local Water District   ( ) Commercial   ( ) Others:________',
-          'Bathing/CR/Flushing: ( ) Deep well   ( ) Local Water District   ( ) Commercial   ( ) Others:________',
+          'Cooking: ${chk('water_source_cooking', 'Deep well')}   ${chk('water_source_cooking', 'Local Water District')}   ${chk('water_source_cooking', 'Commercial')}   ${chk('water_source_cooking', 'Others', 'Others:________')}',
+          'Drinking: ${chk('water_source_drinking', 'Deep well')}   ${chk('water_source_drinking', 'Local Water District')}   ${chk('water_source_drinking', 'Commercial')}   ${chk('water_source_drinking', 'Others', 'Others:________')}',
+          'Bathing/CR/Flushing: ${chk('water_source_washing', 'Deep well')}   ${chk('water_source_washing', 'Local Water District')}   ${chk('water_source_washing', 'Commercial')}   ${chk('water_source_washing', 'Others', 'Others:________')}',
         ],
         leftIndent: 28,
       ),
       _choiceLine('c.', 'Potability (according to key informant):', [
-        '( ) Yes',
-        '( ) No',
+        chk('potability', 'Yes'),
+        chk('potability', 'No'),
       ], leftIndent: 28),
       _choiceLine('d.', 'Storage:', [
-        '( ) None (direct from the faucet or pipe)',
-        '( ) Large covered container with faucet',
-        '( ) Large uncovered container with faucet',
-        '( ) Large covered container without faucet',
-        '( ) Large uncovered container without faucet',
-        '( ) Others, specify: __________________________',
+        chk('water_storage', 'None (direct from the faucet or pipe)'),
+        chk('water_storage', 'Large covered container with faucet'),
+        chk('water_storage', 'Large uncovered container with faucet'),
+        chk('water_storage', 'Large covered container without faucet'),
+        chk('water_storage', 'Large uncovered container without faucet'),
+        chk('water_storage', 'Others', 'Others, specify: __________________________'),
       ], leftIndent: 28),
       _inlineUnderline(
         'e.    Distance of source of water from the house:',
-        '',
+        _surveyString(submission.surveyData, 'distance_from_house'),
         width: 130,
       ),
       pw.SizedBox(height: 8),
       _formText('C.    Food Storage/ Cooking Facilities:', italic: true),
       _choiceLine('a.', 'Food Storage:', [
-        '( ) Covered',
-        '( ) Uncovered',
+        chk('food_storage_covered', 'Covered'),
+        chk('food_storage_covered', 'Uncovered'),
       ], leftIndent: 28),
       _choiceLine('b.', 'Storage:', [
-        '( ) Refrigerator',
-        '( ) Cabinet',
-        '( ) Basket',
-        '( ) Table',
+        chk('food_storage', 'Refrigerator'),
+        chk('food_storage', 'Cabinet'),
+        chk('food_storage', 'Basket'),
+        chk('food_storage', 'Table'),
       ], leftIndent: 28),
       _choiceLine('c.', 'Cooking Facility:', [
-        '( ) Electric stove',
-        '( ) Gas stove',
-        '( ) Firewood/charcoal',
-        '( ) Others:_______',
+        chk('cooking_facility', 'Electric stove'),
+        chk('cooking_facility', 'Gas stove'),
+        chk('cooking_facility', 'Firewood/charcoal'),
+        chk('cooking_facility', 'Others', 'Others:_______'),
       ], leftIndent: 28),
       _choiceLine('d.', 'Sanitary condition ( base on observation):', [
-        '( ) Generally clean',
-        '( ) Dirty',
+        chk('sanitary_condition_observation', 'Generally clean'),
+        chk('sanitary_condition_observation', 'Dirty'),
       ], leftIndent: 28),
       pw.SizedBox(height: 8),
       _formText('D.    Waste Disposal:', italic: true),
       _choiceLine('a.', 'Refuse and Garbage', [
-        '1. Storage:        ( ) Container        ( ) None',
-        '2. Waste Segregation:   ( ) Practiced        ( ) Not Practiced',
+        '1. Storage:        ${chk('garbage_storage', 'Container')}        ${chk('garbage_storage', 'None')}',
+        '2. Waste Segregation:   ${chk('garbage_segregation', 'Practiced')}        ${chk('garbage_segregation', 'Not Practiced')}',
         '2.1 If practiced, method of disposal:',
-        '     ( ) Hog-feeding        ( ) Open dumping        ( ) Burial in pit',
-        '     ( ) Collected          ( ) Composting          ( ) Open burning',
+        '     ${chk('garbage_disposal_method', 'Hog-feeding')}        ${chk('garbage_disposal_method', 'Open dumping')}        ${chk('garbage_disposal_method', 'Burial in pit')}',
+        '     ${chk('garbage_disposal_method', 'Collected')}          ${chk('garbage_disposal_method', 'Composting')}          ${chk('garbage_disposal_method', 'Open burning')}',
         '2.2 Reason for practicing:',
-        '     ( ) Environmentally friendly        ( ) Barangay ordinance which is strictly monitored',
-        '     ( ) Use for business                 ( ) Others, specify:________________________',
+        '     ${chk('garbage_disposal_reason_practicing', 'Environmentally friendly')}        ${chk('garbage_disposal_reason_practicing', 'Barangay ordinance which is strictly monitored')}',
+        '     ${chk('garbage_disposal_reason_practicing', 'Use for business')}                 ${chk('garbage_disposal_reason_practicing', 'Others', 'Others, specify:________________________')}',
         '2.3 If not practiced, method of disposal:',
-        '     ( ) Hog-feeding        ( ) Open dumping        ( ) Burial in pit',
-        '     ( ) Collected          ( ) Composting          ( ) Open burning',
+        '     ${chk('garbage_disposal_reason_not_practicing', 'Hog-feeding')}        ${chk('garbage_disposal_reason_not_practicing', 'Open dumping')}        ${chk('garbage_disposal_reason_not_practicing', 'Burial in pit')}',
+        '     ${chk('garbage_disposal_reason_not_practicing', 'Collected')}          ${chk('garbage_disposal_reason_not_practicing', 'Composting')}          ${chk('garbage_disposal_reason_not_practicing', 'Open burning')}',
         '2.4 Reason for not practicing',
-        '     ( ) Not aware of effects        ( ) No time to do it',
-        '     ( ) Long-time practice of family        ( ) No barangay/municipality ordinance',
+        '     ${chk('garbage_disposal_reason_not_practicing', 'Not aware of effects')}        ${chk('garbage_disposal_reason_not_practicing', 'No time to do it')}',
+        '     ${chk('garbage_disposal_reason_not_practicing', 'Long-time practice of family')}        ${chk('garbage_disposal_reason_not_practicing', 'No barangay/municipality ordinance')}',
       ], leftIndent: 28),
       _choiceLine('b.', 'Toilet Facilities:', [
-        '1. Ownership:       ( ) Owned        ( ) Shared/Public        ( ) None',
-        '2. Type:            ( ) Ballot system        ( ) Pail system        ( ) Overhung latrine',
-        '                   ( ) Water- sealed        ( ) Flush type        ( ) None        ( ) Other: __________',
-        '3. Location from source of water:   ( ) Less than 20 ft.   ( ) 20 ft. beyond',
-        '4. Sanitary condition:              ( ) Generally clean    ( ) Dirty',
+        '1. Ownership:       ${chk('toilet_ownership', 'Owned')}        ${chk('toilet_ownership', 'Shared/Public')}        ${chk('toilet_ownership', 'None')}',
+        '2. Type:            ${chk('toilet_type', 'Ballot system')}        ${chk('toilet_type', 'Pail system')}        ${chk('toilet_type', 'Overhung latrine')}',
+        '                   ${chk('toilet_type', 'Water- sealed')}        ${chk('toilet_type', 'Flush type')}        ${chk('toilet_type', 'None')}        ${chk('toilet_type', 'Other', 'Other: __________')}',
+        '3. Location from source of water:   ${chk('toilet_distance', 'Less than 20 ft.')}   ${chk('toilet_distance', '20 ft. beyond')}',
+        '4. Sanitary condition:              ${chk('toilet_sanitary_condition', 'Generally clean')}    ${chk('toilet_sanitary_condition', 'Dirty')}',
       ], leftIndent: 28),
       _choiceLine('c.', 'Drainage System:', [
-        'Condition:        ( ) Open drainage        ( ) Blind drainage        ( ) None',
-        '                  ( ) Flowing              ( ) Stagnant',
+        'Condition:        ${chk('drainage_condition', 'Open drainage')}        ${chk('drainage_condition', 'Blind drainage')}        ${chk('drainage_condition', 'None')}',
+        '                  ${chk('drainage_condition', 'Flowing')}              ${chk('drainage_condition', 'Stagnant')}',
       ], leftIndent: 28),
       pw.SizedBox(height: 6),
       _choiceLine('E.', 'Presence of Animals that are Rabies carriers:', [
-        '( ) Yes',
-        '( ) No',
+        chk('has_rabies_carriers', 'Yes'),
+        chk('has_rabies_carriers', 'No'),
       ]),
       pw.SizedBox(height: 4),
       _formText('            a.    If yes, animals raised', italic: true),
@@ -3796,6 +3837,11 @@ pw.Widget _surveyPdfPageThree(HealthSubmission submission) {
 }
 
 pw.Widget _surveyPdfPageFour(HealthSubmission submission) {
+  String chk(String key, String choice, [String? label]) {
+    final text = label ?? choice.toLowerCase();
+    return _surveyHasChoice(submission.surveyData, key, choice) ? '(X) $text' : '( ) $text';
+  }
+
   return _pdfFormPage(
     pageNumber: '4',
     footerLeft: 'CDX Tool Revised: 01 / 02-16-2024',
@@ -3811,26 +3857,26 @@ pw.Widget _surveyPdfPageFour(HealthSubmission submission) {
         'b.',
         'Practices measures done to control insects/vectors of diseases:',
         [
-          '( ) Fumigation',
-          '( ) Insecticides',
-          '( ) setting traps',
-          '( ) Cleaning the yard',
-          '( ) None',
+          chk('vector_control_measures', 'Fumigation'),
+          chk('vector_control_measures', 'Insecticides'),
+          chk('vector_control_measures', 'Setting traps', 'setting traps'),
+          chk('vector_control_measures', 'Cleaning the yard'),
+          chk('vector_control_measures', 'None'),
         ],
         leftIndent: 46,
       ),
       _choiceLine('c.', 'Presence of breeding sites (for observation):', [
-        '( ) Yes',
-        '( ) No',
+        chk('has_breeding_sites_observed', 'Yes'),
+        chk('has_breeding_sites_observed', 'No'),
       ], leftIndent: 46),
       _choiceLine('F.', 'Housing Congestion (for observation):', [
-        '( ) Yes',
-        '( ) No',
+        chk('housing_congestion_observed', 'Yes'),
+        chk('housing_congestion_observed', 'No'),
       ]),
       _choiceLine(
         'G.',
         'Presence of Industrial establishment/factory/ies (for observation):',
-        ['( ) Yes', '( ) No'],
+        [chk('has_industrial_establishment_or_factory_observed', 'Yes'), chk('has_industrial_establishment_or_factory_observed', 'No')],
       ),
       pw.SizedBox(height: 14),
       _formText('III.   HEALTH AND ILLNESS PATTERN', bold: true),
@@ -3855,7 +3901,11 @@ pw.Widget _surveyPdfPageFour(HealthSubmission submission) {
       _choiceLine(
         'B.',
         'Is there a member of the family who is a cigarette smoker?',
-        ['( ) Yes', '( ) No', '( ) Frequency/sticks or packs per day'],
+        [
+          chk('has_cigarette_smoker_in_family', 'Yes'), 
+          chk('has_cigarette_smoker_in_family', 'No'), 
+          '( ) Frequency/sticks or packs per day ${_surveyString(submission.surveyData, 'smoking_frequency_sticks_or_packs_per_day')}'
+        ],
         leftIndent: 18,
       ),
       _pdfSmallTable(
@@ -3868,9 +3918,9 @@ pw.Widget _surveyPdfPageFour(HealthSubmission submission) {
       ),
       pw.SizedBox(height: 6),
       _choiceLine('C.', 'Use of prohibited / dangerous drugs:', [
-        '( ) Yes',
-        '( ) No',
-        '( ) Types of Drugs : _______/Solvent',
+        chk('uses_prohibited_or_dangerous_drugs', 'Yes'),
+        chk('uses_prohibited_or_dangerous_drugs', 'No'),
+        '( ) Types of Drugs : ${_surveyString(submission.surveyData, 'types_of_drugs')}',
       ], leftIndent: 18),
       _pdfSmallTable(
         [
@@ -3921,6 +3971,20 @@ pw.Widget _surveyPdfPageFour(HealthSubmission submission) {
         ],
         fontSize: 4.6,
         cellPadding: 1,
+        columnWidths: {
+          0: const pw.FlexColumnWidth(3), // Name
+          1: const pw.FlexColumnWidth(0.8), // Age
+          2: const pw.FlexColumnWidth(0.8), // Wt
+          3: const pw.FlexColumnWidth(0.8), // Ht
+          4: const pw.FlexColumnWidth(1),   // BMI
+          5: const pw.FlexColumnWidth(1.2), // Remarks
+          6: const pw.FlexColumnWidth(1.3), // Waist
+          7: const pw.FlexColumnWidth(1.3), // Hips
+          8: const pw.FlexColumnWidth(1.2), // Waist/Hip
+          9: const pw.FlexColumnWidth(1.2), // Remarks
+          10: const pw.FlexColumnWidth(1.3), // Arm
+          11: const pw.FlexColumnWidth(1.2), // Remarks
+        },
       ),
       _formText(
         '      Legend for indices of Nutritional Status: Weight for Age (WFA)',
@@ -3943,91 +4007,100 @@ pw.Widget _surveyPdfPageFour(HealthSubmission submission) {
         cellPadding: 1.2,
       ),
       _choiceLine('C.', 'Food usually/most taken (General)', [
-        'a. First choice: ( ) Meat only   ( ) Fish   ( ) Vegetable   ( ) Mixed   ( ) Others, specify:___',
-        'b. Number of servings: ( ) 1   ( ) 2-3   ( ) 4-5 and above',
-        'c. Second choice: ( ) Meat   ( ) Fish   ( ) Vegetable   ( ) Mixed   ( ) Others, specify:___',
-        'd. Number of servings: ( ) 1   ( ) 2-3   ( ) 4-5 and above',
+        'a. First choice: ${chk('first_food_choice', 'Meat only')}   ${chk('first_food_choice', 'Fish')}   ${chk('first_food_choice', 'Vegetable')}   ${chk('first_food_choice', 'Mixed')}   ${chk('first_food_choice', 'Others', 'Others, specify:___')}',
+        'b. Number of servings: ${chk('first_food_choice_servings', '1')}   ${chk('first_food_choice_servings', '2-3')}   ${chk('first_food_choice_servings', '4-5 and above')}',
+        'c. Second choice: ${chk('second_food_choice', 'Meat')}   ${chk('second_food_choice', 'Fish')}   ${chk('second_food_choice', 'Vegetable')}   ${chk('second_food_choice', 'Mixed')}   ${chk('second_food_choice', 'Others', 'Others, specify:___')}',
+        'd. Number of servings: ${chk('second_food_choice_servings', '1')}   ${chk('second_food_choice_servings', '2-3')}   ${chk('second_food_choice_servings', '4-5 and above')}',
       ], leftIndent: 18),
       _choiceLine('D.', 'Reason for choices:', [
-        '( ) Its healthy',
-        '( ) Own preference',
-        '( ) Affordable',
-        '( ) personal belief/practices',
-        '( ) Health condition',
+        chk('reason_for_food_choices', 'It is healthy', 'Its healthy'),
+        chk('reason_for_food_choices', 'Own preference'),
+        chk('reason_for_food_choices', 'Affordable'),
+        chk('reason_for_food_choices', 'Personal belief/practices', 'personal belief/practices'),
+        chk('reason_for_food_choices', 'Health condition'),
       ], leftIndent: 18),
       _choiceLine('E.', 'Reason for not choosing other options:', [
-        '( ) Not healthy',
-        '( ) Own preference',
-        '( ) Not affordable',
-        '( ) personal belief/religious practices',
-        '( ) Health condition',
+        chk('reason_for_not_choosing_other_food_options', 'Not healthy'),
+        chk('reason_for_not_choosing_other_food_options', 'Own preference'),
+        chk('reason_for_not_choosing_other_food_options', 'Not affordable'),
+        chk('reason_for_not_choosing_other_food_options', 'Personal belief/religious practices', 'personal belief/religious practices'),
+        chk('reason_for_not_choosing_other_food_options', 'Health condition'),
       ], leftIndent: 18),
       _choiceLine(
         'F.',
         'From the above response, how frequent is the intake?',
         [
-          '( ) Everyday',
-          '( ) Twice a week',
-          '( ) Once a week',
-          '( ) Others, specify: __________________________',
+          chk('food_intake_frequency', 'Everyday'),
+          chk('food_intake_frequency', 'Twice a week'),
+          chk('food_intake_frequency', 'Once a week'),
+          chk('food_intake_frequency', 'Others', 'Others, specify: __________________________'),
         ],
         leftIndent: 18,
       ),
       _choiceLine('G.', 'How is food prepared for mealtime?', [
-        '( ) Prepared at home',
-        '( ) Bought outside',
+        chk('food_prepared_for_mealtime', 'Prepared at home'),
+        chk('food_prepared_for_mealtime', 'Bought outside'),
       ], leftIndent: 18),
       _choiceLine('H.', 'How often?', [
-        '( ) Everyday',
-        '( ) Twice a week',
-        '( ) Once a week',
-        '( ) Others, specify:_____________',
+        chk('food_preparation_frequency', 'Everyday'),
+        chk('food_preparation_frequency', 'Twice a week'),
+        chk('food_preparation_frequency', 'Once a week'),
+        chk('food_preparation_frequency', 'Others', 'Others, specify:_____________'),
       ], leftIndent: 18),
     ],
   );
 }
 
 pw.Widget _surveyPdfPageFive(HealthSubmission submission) {
+  String chk(String key, String choice, [String? label]) {
+    final text = label ?? choice.toLowerCase();
+    return _surveyHasChoice(submission.surveyData, key, choice) ? '(X) $text' : '( ) $text';
+  }
+
+  String chkBool(String key, String label) {
+    return (submission.surveyData[key] == true) ? '(X) $label' : '( ) $label';
+  }
+
   return _pdfFormPage(
     pageNumber: '5',
     children: [
       _choiceLine('I.', 'If bought outside, is it from the:', [
-        '( ) Restaurant/Fast food',
-        '( ) Carinderia',
-        '( ) Food cart e.g. Fried chicken sa kanto, provent, calamares',
+        chk('bought_food_source', 'Restaurant/Fast food'),
+        chk('bought_food_source', 'Carinderia'),
+        chk('bought_food_source', 'Food cart', 'Food cart e.g. Fried chicken sa kanto, provent, calamares'),
       ], leftIndent: 18),
       _choiceLine('J.', 'Reason for the above option:', [
-        '( ) Convenient',
-        '( ) Cheaper',
-        '( ) Healthy',
-        '( ) Variety of choices',
-        '( ) Others, specify: _________________________________',
+        chk('bought_food_reason', 'Convenient'),
+        chk('bought_food_reason', 'Cheaper'),
+        chk('bought_food_reason', 'Healthy'),
+        chk('bought_food_reason', 'Variety of choices'),
+        chk('bought_food_reason', 'Others', 'Others, specify: _________________________________'),
       ], leftIndent: 18),
       _choiceLine(
         'K.',
         'Takes/eat canned/ preserved food e. g. Lucky me noodles, Maling, luncheon meat:',
         [
-          '( ) Everyday',
-          '( ) Every other day',
-          '( ) Every week',
-          '( ) Sometimes',
-          '( ) Never',
+          chk('canned_food_frequency', 'Everyday'),
+          chk('canned_food_frequency', 'Every other day'),
+          chk('canned_food_frequency', 'Every week'),
+          chk('canned_food_frequency', 'Sometimes'),
+          chk('canned_food_frequency', 'Never'),
         ],
         leftIndent: 18,
       ),
       _choiceLine('L.', 'Takes/eat grilled foods:', [
-        '( ) Everyday',
-        '( ) Every other day',
-        '( ) Every week',
-        '( ) Sometimes',
-        '( ) Never',
+        chk('grilled_food_frequency', 'Everyday'),
+        chk('grilled_food_frequency', 'Every other day'),
+        chk('grilled_food_frequency', 'Every week'),
+        chk('grilled_food_frequency', 'Sometimes'),
+        chk('grilled_food_frequency', 'Never'),
       ], leftIndent: 18),
       _choiceLine('M.', 'Drinks carbonated beverages:', [
-        '( ) Everyday',
-        '( ) Every other day',
-        '( ) Every week',
-        '( ) Sometimes',
-        '( ) Never',
+        chk('carbonated_drinks_frequency', 'Everyday'),
+        chk('carbonated_drinks_frequency', 'Every other day'),
+        chk('carbonated_drinks_frequency', 'Every week'),
+        chk('carbonated_drinks_frequency', 'Sometimes'),
+        chk('carbonated_drinks_frequency', 'Never'),
       ], leftIndent: 18),
       pw.SizedBox(height: 9),
       _underlinedTitle('3.    BELIEFS AND PRACTICES'),
@@ -4035,44 +4108,52 @@ pw.Widget _surveyPdfPageFive(HealthSubmission submission) {
         'A.',
         'Person/nel mostly consulted in times of sickness/illness:',
         [
-          '( ) Doctor',
-          '( ) Nurse',
-          '( ) Midwife',
-          '( ) Hilot',
-          '( ) Albularyo',
-          '( ) Faith Healer',
-          '( ) Elderly',
+          chk('person_consulted_when_sick', 'Doctor'),
+          chk('person_consulted_when_sick', 'Nurse'),
+          chk('person_consulted_when_sick', 'Midwife'),
+          chk('person_consulted_when_sick', 'Hilot'),
+          chk('person_consulted_when_sick', 'Albularyo'),
+          chk('person_consulted_when_sick', 'Faith Healer'),
+          chk('person_consulted_when_sick', 'Elderly'),
         ],
         leftIndent: 18,
       ),
       _choiceLine('B.', 'Measures taken in times of sickness/illness:', [
-        '( ) Consult a private health worker',
-        '( ) See a known community healer',
-        '( ) Consult a Rural Health Team',
-        '( ) Self- Medication',
-        '( ) None',
+        chk('measures_taken_when_sick', 'Consult a private health worker'),
+        chk('measures_taken_when_sick', 'See a known community healer'),
+        chk('measures_taken_when_sick', 'Consult a Rural Health Team'),
+        chk('measures_taken_when_sick', 'Self-Medication', 'Self- Medication'),
+        chk('measures_taken_when_sick', 'None'),
       ], leftIndent: 18),
       _choiceLine(
         'C.',
         'Medication/ treatment taken in times of sickness/illness:',
         [
-          '( ) Prescribed by Doctor',
-          '( ) Self-Medication/OTC drugs',
-          '( ) Herbals',
-          '( ) Others, specify: __________________',
+          chk('medication_taken_when_sick', 'Prescribed by Doctor'),
+          chk('medication_taken_when_sick', 'Self-Medication/OTC drugs'),
+          chk('medication_taken_when_sick', 'Herbals'),
+          chk('medication_taken_when_sick', 'Others', 'Others, specify: __________________'),
         ],
         leftIndent: 18,
       ),
       _choiceLine(
         'D.',
         'Medical Check-Up whether in private or government institution:',
-        ['( ) once a year', '( ) twice a year', '( ) more than a year'],
+        [
+          chk('medical_checkup_frequency', 'Once a year'),
+          chk('medical_checkup_frequency', 'Twice a year'),
+          chk('medical_checkup_frequency', 'More than a year'),
+        ],
         leftIndent: 18,
       ),
       _choiceLine(
         'E.',
         'Dental Check-Up whether in private or government clinic:',
-        ['( ) once a year', '( ) twice a year', '( ) more than a year'],
+        [
+          chk('dental_checkup_frequency', 'Once a year'),
+          chk('dental_checkup_frequency', 'Twice a year'),
+          chk('dental_checkup_frequency', 'More than a year'),
+        ],
         leftIndent: 18,
       ),
       pw.SizedBox(height: 9),
@@ -4136,36 +4217,36 @@ pw.Widget _surveyPdfPageFive(HealthSubmission submission) {
             '[only for: Women who are 12 yrs. (menarche age) to 40-45 yrs. (until menopause age); with partner(s); or plans to get pregnant.]',
       ),
       _formText(
-        '      1.    Family Planning: ( ) Acceptor                         Reason:',
+        '      1.    Family Planning: ${chk('family_planning_status', 'Acceptor')}                         Reason:',
       ),
       _optionRow([
-        '( ) Good for health of family',
-        '( ) Personal belief',
-        '( ) Religious belief',
-        '( ) Influence by others',
-        '( ) Others, Specify:____________',
+        chk('family_planning_acceptor_reasons', 'Good for health of family'),
+        chk('family_planning_acceptor_reasons', 'Personal belief'),
+        chk('family_planning_acceptor_reasons', 'Religious belief'),
+        chk('family_planning_acceptor_reasons', 'Influence by others'),
+        chk('family_planning_acceptor_reasons', 'Others', 'Others, Specify:____________'),
       ], leftIndent: 210),
-      _formText('                  ( ) Non- Acceptor                  Reason:'),
+      _formText('                  ${chk('family_planning_status', 'Non-Acceptor', 'Non- Acceptor')}                  Reason:'),
       _optionRow([
-        '( ) Bad for health of family',
-        '( ) Personal belief',
-        '( ) Religious belief',
-        '( ) Influence by others',
-        '( ) Others, Specify:____________',
+        chk('family_planning_non_acceptor_reasons', 'Bad for health of family'),
+        chk('family_planning_non_acceptor_reasons', 'Personal belief'),
+        chk('family_planning_non_acceptor_reasons', 'Religious belief'),
+        chk('family_planning_non_acceptor_reasons', 'Influence by others'),
+        chk('family_planning_non_acceptor_reasons', 'Others', 'Others, Specify:____________'),
       ], leftIndent: 210),
       pw.SizedBox(height: 5),
       _formText('      2.    Modern Methods Used:'),
       _formText(
-        '            ( ) A. Permanent method       Like:   ( ) Female sterilization / Bilateral Tubal Ligation       ( ) Male sterilization / Vasectomy',
+        '            ( ) A. Permanent method       Like:   ${chkBool('permanent_method_female_sterilization_btl', 'Female sterilization / Bilateral Tubal Ligation')}       ${chkBool('permanent_method_male_sterilization_vasectomy', 'Male sterilization / Vasectomy')}',
       ),
       _formText(
-        '            ( ) B. Temporary method:      ( ) a. Supply Methods       Like: ( ) Pills  ( ) IUD  ( ) Injectable  ( ) Condoms  ( ) Implant',
+        '            ( ) B. Temporary method:      ( ) a. Supply Methods       Like: ${chkBool('supply_method_pills', 'Pills')}  ${chkBool('supply_method_iud', 'IUD')}  ${chkBool('supply_method_injectable', 'Injectable')}  ${chkBool('supply_method_condoms', 'Condoms')}  ${chkBool('supply_method_implant', 'Implant')}',
       ),
       _formText(
-        '            ( ) b. Fertility Awareness-Based Method        Like: ( ) Cervical Mucus Method / Billings Ovu. Method   ( ) Basal Body Temperature (BBT)',
+        '            ( ) b. Fertility Awareness-Based Method        Like: ${chkBool('fertility_method_cervical_mucus_billings', 'Cervical Mucus Method / Billings Ovu. Method')}   ${chkBool('fertility_method_basal_body_temperature', 'Basal Body Temperature (BBT)')}',
       ),
       _formText(
-        '                                                                 ( ) Sympto-Thermal Method   ( ) Standard Days Method (SDM)   ( ) Lactational Amenorrhea Method (LAM)',
+        '                                                                 ${chkBool('fertility_method_sympto_thermal', 'Sympto-Thermal Method')}   ${chkBool('fertility_method_standard_days', 'Standard Days Method (SDM)')}   ${chkBool('fertility_method_lactational_amenorrhea', 'Lactational Amenorrhea Method (LAM)')}',
       ),
       pw.SizedBox(height: 8),
       _underlinedTitle('5.    HEALTH INDICATORS'),
@@ -4202,6 +4283,11 @@ pw.Widget _surveyPdfPageFive(HealthSubmission submission) {
 }
 
 pw.Widget _surveyPdfPageSix(HealthSubmission submission) {
+  String chk(String key, String choice, [String? label]) {
+    final text = label ?? choice.toLowerCase();
+    return _surveyHasChoice(submission.surveyData, key, choice) ? '(X) $text' : '( ) $text';
+  }
+
   return _pdfFormPage(
     pageNumber: '6',
     footerLeft: 'CDX Tool Revised: 01 / 02-16-2024',
@@ -4255,7 +4341,10 @@ pw.Widget _surveyPdfPageSix(HealthSubmission submission) {
       _choiceLine(
         'F.',
         'Awareness of health services offered by the BHC/ RHU:',
-        ['( ) Aware', '( ) Unaware'],
+        [
+          chk('awareness_of_bhc_rhu_health_services', 'Aware'),
+          chk('awareness_of_bhc_rhu_health_services', 'Unaware'),
+        ],
         leftIndent: 18,
       ),
       pw.SizedBox(height: 10),
@@ -4280,37 +4369,37 @@ pw.Widget _surveyPdfPageSix(HealthSubmission submission) {
       _formText('2.        Material Resources'),
       pw.SizedBox(height: 8),
       _choiceLine('A.', 'Health and Budget Expenditures:', [
-        '( ) Available',
-        '( ) Not-Available',
-        'Amount per year: Php___________',
+        chk('health_budget_expenditures_availability', 'Available'),
+        chk('health_budget_expenditures_availability', 'Not Available', 'Not-Available'),
+        'Amount per year: Php ${_surveyString(submission.surveyData, 'health_budget_amount_per_year')}',
       ], leftIndent: 18),
       _choiceLine('B.', 'Availability of supplies and equipment:', [
-        '( ) Available100%',
-        '( ) Limited Supplies',
-        '( ) Not-Available',
+        chk('supplies_equipment_availability', 'Available 100%', 'Available100%'),
+        chk('supplies_equipment_availability', 'Limited Supplies'),
+        chk('supplies_equipment_availability', 'Not Available', 'Not-Available'),
       ], leftIndent: 18),
       pw.SizedBox(height: 10),
       _formText('V.   Political/ Leadership Patterns:', bold: true),
       pw.SizedBox(height: 8),
       _choiceLine('1.', 'Recognized Leaders:\nFormal/Elected:\nNon-formal:', [
-        '( ) Captain',
-        '( ) Kagawad',
-        '( ) Elderly',
-        '( ) BHW',
-        '( ) Influential person',
-        '( ) Religious leader',
-        '( ) Neighbor',
+        chk('recognized_formal_elected_leaders', 'Captain'),
+        chk('recognized_formal_elected_leaders', 'Kagawad'),
+        chk('recognized_non_formal_leaders', 'Elderly'),
+        chk('recognized_non_formal_leaders', 'BHW'),
+        chk('recognized_non_formal_leaders', 'Influential person'),
+        chk('recognized_non_formal_leaders', 'Religious leader'),
+        chk('recognized_non_formal_leaders', 'Neighbor'),
       ], leftIndent: 18),
       _choiceLine(
         '2.',
         'Conditions/ events/ issues that cause social conflicts/ upheavals within the community',
         [
-          '( ) Gossip',
-          '( ) Family conflict',
-          '( ) Drugs',
-          '( ) Riot',
-          '( ) Alcohol drinking',
-          '( ) Others, specify:___________________',
+          chk('social_conflict_causes', 'Gossip'),
+          chk('social_conflict_causes', 'Family conflict'),
+          chk('social_conflict_causes', 'Drugs'),
+          chk('social_conflict_causes', 'Riot'),
+          chk('social_conflict_causes', 'Alcohol drinking'),
+          chk('social_conflict_causes', 'Others', 'Others, specify:___________________'),
         ],
         leftIndent: 18,
       ),
@@ -4318,10 +4407,10 @@ pw.Widget _surveyPdfPageSix(HealthSubmission submission) {
         '3.',
         'Practices/ approaches which are effective in setting issues and concern within the community',
         [
-          '( ) Settlement among involved parties',
-          '( ) Brgy. hearing',
-          '( ) Endorsed to local police',
-          '( ) Others, specify:___________________',
+          chk('conflict_resolution_approaches', 'Settlement among involved parties'),
+          chk('conflict_resolution_approaches', 'Brgy. hearing'),
+          chk('conflict_resolution_approaches', 'Endorsed to local police'),
+          chk('conflict_resolution_approaches', 'Others', 'Others, specify:___________________'),
         ],
         leftIndent: 18,
       ),
@@ -4928,6 +5017,7 @@ pw.Widget _choiceLine(
   String label,
   List<String> choices, {
   double leftIndent = 16,
+  double labelWidth = 150,
 }) {
   final text = choices.join('        ');
   return pw.Padding(
@@ -4936,8 +5026,56 @@ pw.Widget _choiceLine(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
         pw.SizedBox(width: 18, child: _formText(marker)),
-        pw.SizedBox(width: 150, child: _formText(label)),
+        pw.SizedBox(width: labelWidth, child: _formText(label)),
         pw.Expanded(child: _formText(text)),
+      ],
+    ),
+  );
+}
+
+/// Like [_choiceLine] but choices wrap on a new line below the label.
+/// Used when the label text is long (e.g. Priorities & Expenditure).
+pw.Widget _choiceBlock(
+  String marker,
+  String label,
+  List<String> choices, {
+  double leftIndent = 16,
+  int columns = 4,
+}) {
+  final rowCount = (choices.length / columns).ceil();
+  return pw.Padding(
+    padding: pw.EdgeInsets.only(left: leftIndent, top: 1.5),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.SizedBox(width: 18, child: _formText(marker)),
+            pw.Expanded(child: _formText(label)),
+          ],
+        ),
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(left: 18, top: 1),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              for (var r = 0; r < rowCount; r++)
+                pw.Row(
+                  children: [
+                    for (var c = 0; c < columns; c++)
+                      pw.Expanded(
+                        child: _formText(
+                          r * columns + c < choices.length
+                              ? choices[r * columns + c]
+                              : '',
+                        ),
+                      ),
+                  ],
+                ),
+            ],
+          ),
+        ),
       ],
     ),
   );
@@ -4993,6 +5131,9 @@ pw.Widget _pdfSmallTable(
   int headerRows = 0,
   double fontSize = 7,
   double cellPadding = 2.5,
+  Map<int, pw.TableColumnWidth>? columnWidths,
+  pw.TableCellVerticalAlignment verticalAlignment =
+      pw.TableCellVerticalAlignment.top,
 }) {
   final columnCount = rows.fold<int>(
     0,
@@ -5007,8 +5148,8 @@ pw.Widget _pdfSmallTable(
     padding: const pw.EdgeInsets.only(bottom: 4),
     child: pw.Table(
       border: pw.TableBorder.all(color: PdfColors.black, width: 0.35),
-      defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
-      columnWidths: {
+      defaultVerticalAlignment: verticalAlignment,
+      columnWidths: columnWidths ?? {
         for (var index = 0; index < columnCount; index++)
           index: const pw.FlexColumnWidth(),
       },

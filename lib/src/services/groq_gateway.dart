@@ -25,14 +25,14 @@ class GroqGateway {
         'Content-Type': 'application/json',
       },
       body: jsonEncode({
-        'model': 'openai/gpt-oss-20b',
+        'model': 'llama3-8b-8192',
         'temperature': 0.2,
         'max_completion_tokens': 1400,
         'messages': [
           {
             'role': 'system',
             'content':
-                'You are a public health triage assistant for KASUDLO household surveys. Analyze the survey data, do not diagnose, and give practical next steps for a field worker. If findings may be urgent, clearly advise immediate referral or emergency care. Suggest nearby care using the respondent address; when an exact hospital cannot be verified, recommend the nearest barangay health station, RHU, municipal/city hospital, or emergency department and say the worker must verify current availability locally. Keep text concise and suitable for community health work.',
+                'You are a public health triage assistant for KASUDLO household surveys. Analyze the survey data, do not diagnose, and give practical next steps for a field nurse. If findings may be urgent, clearly advise immediate referral or emergency care. Suggest nearby care using the respondent address; when an exact hospital cannot be verified, recommend the nearest barangay health station, RHU, municipal/city hospital, or emergency department and say the nurse must verify current availability locally. Keep text concise and suitable for community health work.',
           },
           {
             'role': 'user',

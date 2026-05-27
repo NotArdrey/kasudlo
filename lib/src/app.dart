@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import 'screens/admin_screen.dart';
 import 'screens/collection_screen.dart';
+import 'screens/contact_information_screen.dart';
+import 'screens/findings_screen.dart';
 import 'screens/health_tips_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
@@ -56,6 +58,10 @@ class _KasudloAppState extends ConsumerState<KasudloApp> {
           path: '/login',
           builder: (context, state) => const LoginScreen(),
         ),
+        GoRoute(
+          path: '/collect',
+          builder: (context, state) => const CollectionScreen(),
+        ),
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) =>
               ShellScreen(navigationShell: navigationShell),
@@ -79,14 +85,6 @@ class _KasudloAppState extends ConsumerState<KasudloApp> {
             StatefulShellBranch(
               routes: [
                 GoRoute(
-                  path: '/collect',
-                  builder: (context, state) => const CollectionScreen(),
-                ),
-              ],
-            ),
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
                   path: '/reports',
                   builder: (context, state) => const ReportsScreen(),
                 ),
@@ -97,6 +95,22 @@ class _KasudloAppState extends ConsumerState<KasudloApp> {
                 GoRoute(
                   path: '/health-tips',
                   builder: (context, state) => const HealthTipsScreen(),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/findings',
+                  builder: (context, state) => const FindingsScreen(),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/contact',
+                  builder: (context, state) => const ContactInformationScreen(),
                 ),
               ],
             ),

@@ -32,7 +32,7 @@ void main() {
       'edit_history': const [
         {
           'edited_at': '2026-05-24T05:15:00Z',
-          'edited_by': 'worker@test.com',
+          'edited_by': 'nurse@test.com',
           'summary': '1 field updated.',
           'changes': ['Name changed from Old to Remote Household.'],
         },
@@ -159,7 +159,7 @@ void main() {
         .withEditHistory(
           previous: original,
           editedAt: DateTime(2026, 5, 24, 13, 5),
-          editedBy: 'worker@test.com',
+          editedBy: 'nurse@test.com',
         );
 
     expect(edited.editHistory, hasLength(1));
@@ -172,7 +172,7 @@ void main() {
     final restored = HealthSubmission.fromJson(edited.toJson());
 
     expect(restored.editHistory, hasLength(1));
-    expect(restored.editHistory.first.editedBy, 'worker@test.com');
+    expect(restored.editHistory.first.editedBy, 'nurse@test.com');
     expect(restored.editHistory.first.editedAt, DateTime(2026, 5, 24, 13, 5));
   });
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../assessment_options.dart';
 import '../models.dart';
@@ -27,7 +28,8 @@ enum _CollectPart {
   concerns,
 }
 
-class _CollectionScreenState extends ConsumerState<CollectionScreen> {
+class _CollectionScreenState extends ConsumerState<CollectionScreen>
+    with WidgetsBindingObserver {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _ageController = TextEditingController();
@@ -37,6 +39,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
   final _accountEmailController = TextEditingController();
   final _accountPasswordController = TextEditingController();
   final _accountConfirmPasswordController = TextEditingController();
+  final _scrollController = ScrollController();
 
   final _healthProblems = <String>{};
   final _communityConcerns = <String>{};
@@ -52,11 +55,23 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _surveyData['family_members'] = _familyRowsForCount();
+    _surveyData['time_started'] = _currentTime();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      if (_nameController.text.trim().isNotEmpty) {
+        _save(submit: false);
+      }
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _nameController.dispose();
     _ageController.dispose();
     _addressController.dispose();
@@ -65,6 +80,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     _accountEmailController.dispose();
     _accountPasswordController.dispose();
     _accountConfirmPasswordController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -72,9 +88,16 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
   Widget build(BuildContext context) {
     final controller = ref.watch(appControllerProvider);
 
-    return AppPage(
-      title: 'Collect Data',
-      subtitle: 'Household health assessment',
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) {
+        if (_nameController.text.trim().isNotEmpty) {
+          _save(submit: false);
+        }
+      },
+      child: AppPage(
+        title: 'Collect Data',
+        subtitle: 'Household health assessment',
+        controller: _scrollController,
       children: [
         Form(
           key: _formKey,
@@ -90,7 +113,11 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                 duration: const Duration(milliseconds: 180),
                 child: KeyedSubtree(
                   key: ValueKey(_currentPart),
-                  child: _currentPartSection(),
+                  child: SurveyContext(
+                    surveyData: _surveyData,
+                    onGlobalChanged: _setSurveyDataValue,
+                    child: _currentPartSection(),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -105,33 +132,19 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
                   controller.errorMessage!,
                   style: const TextStyle(color: KasudloColors.critical),
                 ),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: controller.isBusy
-                          ? null
-                          : () => _save(submit: false),
-                      icon: const Icon(Icons.save_outlined),
-                      label: const Text('Save Draft'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: controller.isBusy
-                          ? null
-                          : () => _save(submit: true),
-                      icon: const Icon(Icons.cloud_upload_outlined),
-                      label: const Text('Submit'),
-                    ),
-                  ),
-                ],
-              ),
+              if (_currentPart == _CollectPart.concerns)
+                ElevatedButton.icon(
+                  onPressed: controller.isBusy
+                      ? null
+                      : () => _save(submit: true),
+                  icon: const Icon(Icons.cloud_upload_outlined),
+                  label: const Text('Submit'),
+                ),
             ],
           ),
         ),
       ],
+      ),
     );
   }
 
@@ -213,6 +226,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
       return;
     }
     setState(() => _currentPart = _CollectPart.values[previousIndex]);
+    _scrollToTop();
   }
 
   void _goToNextPart() {
@@ -221,6 +235,17 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
       return;
     }
     setState(() => _currentPart = _CollectPart.values[nextIndex]);
+    _scrollToTop();
+  }
+
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
   }
 
   void _toggleCommunityConcern(String option, bool checked) {
@@ -232,7 +257,13 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
   }
 
   void _setSurveyDataValue(String key, Object? value) {
-    setState(() => _surveyData[key] = value);
+    setState(() {
+      _surveyData[key] = value;
+      if (key == 'family_members' && value is List) {
+        _familyCountController.text = value.length.toString();
+        _surveyData['number_of_family'] = value.length;
+      }
+    });
   }
 
   void _setFamilyCountValue(String value) {
@@ -273,14 +304,28 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
       return;
     }
 
+    if (submit) {
+      _surveyData['time_finished'] = _currentTime();
+    }
+
     final controller = ref.read(appControllerProvider);
     final surveyData = _buildSurveyData();
     final submission = _buildSubmission(controller, surveyData);
     AiHealthGuidance? guidance;
 
     if (submit) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
       await controller.submit(submission);
       guidance = await controller.analyzeAndSaveSubmissionGuidance(submission);
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
     } else {
       await controller.saveDraft(submission);
     }
@@ -297,6 +342,9 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
         }
       }
       _resetForm();
+      if (mounted) {
+        context.go('/reports');
+      }
     } else {
       _showMessage('Draft saved.');
     }
@@ -344,6 +392,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
       _communityConcerns.clear();
       _surveyData.clear();
       _surveyData['family_members'] = _familyRowsForCount();
+      _surveyData['time_started'] = _currentTime();
       _vaccinationStatus = 'Unknown';
       _waterSanitation = 'Safe water and sanitary toilet';
       _nutritionalStatus = 'Normal';
@@ -433,6 +482,13 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen> {
     ];
   }
 
+  String _currentTime() {
+    final now = DateTime.now();
+    final hour = now.hour.toString().padLeft(2, '0');
+    final minute = now.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
   List<Map<String, dynamic>> _familyRows() {
     final value = _surveyData['family_members'];
     if (value is List) {
@@ -497,6 +553,11 @@ class _CollectPartSelector extends StatelessWidget {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: SegmentedButton<_CollectPart>(
+        style: SegmentedButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
         showSelectedIcon: false,
         selected: {currentPart},
         onSelectionChanged: (selected) => onChanged(selected.single),
@@ -611,7 +672,7 @@ class _DemographicSection extends StatelessWidget {
           onSurveyChanged: onSurveyChanged,
           onFamilyCountChanged: onFamilyCountChanged,
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         _ChoiceSection(
           title: 'Account',
           children: [
@@ -625,7 +686,7 @@ class _DemographicSection extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         _FamilySection(
           familyRows: familyRows,
           surveyData: surveyData,
@@ -707,6 +768,7 @@ class _ConcernsSection extends StatelessWidget {
           controller: notesController,
           minLines: 3,
           maxLines: 5,
+          textCapitalization: TextCapitalization.sentences,
           decoration: const InputDecoration(
             labelText: 'Notes',
             alignLabelWithHint: true,
@@ -754,7 +816,11 @@ class _PersonalInfoSection extends StatelessWidget {
         TextFormField(
           controller: nameController,
           textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(labelText: 'Informant'),
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Informant',
+            prefixIcon: Icon(Icons.person_outline),
+          ),
           validator: (value) =>
               value == null || value.trim().isEmpty ? 'Enter informant' : null,
         ),
@@ -762,20 +828,31 @@ class _PersonalInfoSection extends StatelessWidget {
           controller: ageController,
           keyboardType: TextInputType.number,
           textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(labelText: 'Age'),
+          decoration: const InputDecoration(
+            labelText: 'Age',
+            prefixIcon: Icon(Icons.cake_outlined),
+          ),
         ),
         TextFormField(
           controller: addressController,
           textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(labelText: 'Address'),
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            labelText: 'Address',
+            prefixIcon: Icon(Icons.location_on_outlined),
+          ),
           validator: (value) =>
               value == null || value.trim().isEmpty ? 'Enter address' : null,
         ),
         TextFormField(
           controller: familyCountController,
           keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.done,
           onChanged: onFamilyCountChanged,
-          decoration: const InputDecoration(labelText: 'Family members'),
+          decoration: const InputDecoration(
+            labelText: 'Family members',
+            prefixIcon: Icon(Icons.groups_outlined),
+          ),
           validator: (value) =>
               (int.tryParse(value ?? '') ?? 0) < 1 ? 'Enter at least 1' : null,
         ),
@@ -811,10 +888,10 @@ class _ChoiceSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           for (final child in children) ...[
             child,
-            if (child != children.last) const SizedBox(height: 12),
+            if (child != children.last) const SizedBox(height: 16),
           ],
         ],
       ),

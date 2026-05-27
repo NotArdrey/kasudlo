@@ -14,10 +14,11 @@ class SupabaseGateway {
       'family_members_count, family_members, health_problems, '
       'vaccination_status, water_sanitation, nutritional_status, '
       'community_concerns, consent_given, notes, edit_history, payload, '
-      'created_at, submitted_at, updated_at';
+      'created_at, submitted_at, updated_at, '
+      'is_deleted, deleted_at, deleted_by';
   static const _healthTipSelect =
-      'id, title, description, file_name, mime_type, file_size, '
-      'attachment_base64, created_by_email, created_at, updated_at';
+      'id, title, description, attachments, '
+      'created_by_email, created_at, updated_at';
   static bool _isPasswordRecoverySession = false;
   static bool _initialAuthLinkHandled = false;
   static final _appLinks = AppLinks();
@@ -333,6 +334,27 @@ class SupabaseGateway {
     }
 
     return HealthSubmission.fromRemoteJson(Map<String, dynamic>.from(data));
+  }
+
+  static Future<List<HealthSubmission>> fetchPatientFindings() async {
+    final supabase = client;
+    if (supabase == null) {
+      throw StateError('Supabase is not configured.');
+    }
+
+    final data = await supabase.rpc('kasudlo_get_patient_findings');
+
+    if (data is! List) {
+      return const [];
+    }
+
+    return data
+        .whereType<Map>()
+        .map(
+          (item) =>
+              HealthSubmission.fromRemoteJson(Map<String, dynamic>.from(item)),
+        )
+        .toList();
   }
 
   static Future<Map<String, dynamic>> _invokeAdminUsers(

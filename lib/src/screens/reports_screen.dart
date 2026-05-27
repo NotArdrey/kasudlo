@@ -1,6 +1,6 @@
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../assessment_options.dart';
@@ -23,30 +23,16 @@ class ReportsScreen extends ConsumerWidget {
     final summary = controller.summary;
 
     return AppPage(
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: KasudloColors.primary,
+        foregroundColor: Colors.white,
+        onPressed: () => context.push('/collect'),
+        icon: const Icon(Icons.add),
+        label: const Text('Collect'),
+      ),
       title: 'Reports',
       subtitle: 'Summarized community health data',
       children: [
-        GridView.count(
-          crossAxisCount: 2,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: 1.08,
-          children: [
-            MetricCard(
-              label: 'Households',
-              value: '${summary.totalHouseholds}',
-              icon: Icons.home_outlined,
-            ),
-            MetricCard(
-              label: 'Family members',
-              value: '${summary.totalFamilyMembers}',
-              icon: Icons.people_alt_outlined,
-              color: KasudloColors.secondary,
-            ),
-          ],
-        ),
         if (!summary.hasData)
           const EmptyState(
             icon: Icons.bar_chart_outlined,
@@ -56,35 +42,10 @@ class ReportsScreen extends ConsumerWidget {
           )
         else ...[
           _ReportRecordsCard(
-            submissions: controller.submissions,
+            submissions: controller.activeSubmissions,
             onView: (submission) => _showViewSheet(context, submission),
             onEdit: (submission) => _showEditSheet(context, ref, submission),
             onDelete: (submission) => _confirmDelete(context, ref, submission),
-          ),
-          _BreakdownCard(
-            title: 'Vaccination status',
-            values: summary.vaccinationStatuses,
-            color: KasudloColors.primary,
-          ),
-          _BreakdownCard(
-            title: 'Nutritional status',
-            values: summary.nutritionalStatuses,
-            color: KasudloColors.secondary,
-          ),
-          _BreakdownCard(
-            title: 'Water and sanitation',
-            values: summary.waterSanitationStatuses,
-            color: KasudloColors.warning,
-          ),
-          _RankedListCard(
-            title: 'Common health problems',
-            values: summary.healthProblems,
-            emptyText: 'No health problems selected.',
-          ),
-          _RankedListCard(
-            title: 'Community concerns',
-            values: summary.communityConcerns,
-            emptyText: 'No community concerns selected.',
           ),
         ],
       ],
@@ -168,7 +129,7 @@ class ReportsScreen extends ConsumerWidget {
   }
 }
 
-class _ReportRecordsCard extends StatefulWidget {
+class _ReportRecordsCard extends ConsumerStatefulWidget {
   const _ReportRecordsCard({
     required this.submissions,
     required this.onView,
@@ -182,14 +143,15 @@ class _ReportRecordsCard extends StatefulWidget {
   final ValueChanged<HealthSubmission> onDelete;
 
   @override
-  State<_ReportRecordsCard> createState() => _ReportRecordsCardState();
+  ConsumerState<_ReportRecordsCard> createState() => _ReportRecordsCardState();
 }
 
-class _ReportRecordsCardState extends State<_ReportRecordsCard> {
+class _ReportRecordsCardState extends ConsumerState<_ReportRecordsCard> {
   final _searchController = TextEditingController();
   final _selectedSubmissionIds = <String>{};
   String _query = '';
   ReportExportFormat? _exportingFormat;
+  bool _isAnalyzingWithAi = false;
 
   @override
   void didUpdateWidget(covariant _ReportRecordsCard oldWidget) {
@@ -262,28 +224,30 @@ class _ReportRecordsCardState extends State<_ReportRecordsCard> {
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              OutlinedButton.icon(
-                onPressed: selectedCount == 0 || isExporting
-                    ? null
-                    : () => _exportSelected(ReportExportFormat.pdf),
-                icon: _ExportButtonIcon(
-                  format: ReportExportFormat.pdf,
-                  exportingFormat: _exportingFormat,
-                  idleIcon: Icons.picture_as_pdf_outlined,
+              if (false) ...[
+                OutlinedButton.icon(
+                  onPressed: selectedCount == 0 || isExporting
+                      ? null
+                      : () => _exportSelected(ReportExportFormat.pdf),
+                  icon: _ExportButtonIcon(
+                    format: ReportExportFormat.pdf,
+                    exportingFormat: _exportingFormat,
+                    idleIcon: Icons.picture_as_pdf_outlined,
+                  ),
+                  label: const Text('Export PDF'),
                 ),
-                label: const Text('Export PDF'),
-              ),
-              OutlinedButton.icon(
-                onPressed: selectedCount == 0 || isExporting
-                    ? null
-                    : () => _exportSelected(ReportExportFormat.docs),
-                icon: _ExportButtonIcon(
-                  format: ReportExportFormat.docs,
-                  exportingFormat: _exportingFormat,
-                  idleIcon: Icons.description_outlined,
+                OutlinedButton.icon(
+                  onPressed: selectedCount == 0 || isExporting
+                      ? null
+                      : () => _exportSelected(ReportExportFormat.docs),
+                  icon: _ExportButtonIcon(
+                    format: ReportExportFormat.docs,
+                    exportingFormat: _exportingFormat,
+                    idleIcon: Icons.description_outlined,
+                  ),
+                  label: const Text('Export Docs'),
                 ),
-                label: const Text('Export Docs'),
-              ),
+              ],
               TextButton.icon(
                 onPressed: filteredSubmissions.isEmpty
                     ? null
@@ -292,9 +256,18 @@ class _ReportRecordsCardState extends State<_ReportRecordsCard> {
                 label: const Text('Select shown'),
               ),
               TextButton.icon(
-                onPressed: selectedCount == 0 ? null : _clearSelection,
+                onPressed: selectedCount == 0 || _isAnalyzingWithAi ? null : _clearSelection,
                 icon: const Icon(Icons.clear_outlined),
                 label: const Text('Clear'),
+              ),
+              OutlinedButton.icon(
+                onPressed: selectedCount == 0 || isExporting || _isAnalyzingWithAi
+                    ? null
+                    : () => _analyzeSelectedWithAi(),
+                icon: _isAnalyzingWithAi 
+                    ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2.2)) 
+                    : const Icon(Icons.psychology_outlined),
+                label: const Text('Analyze with AI'),
               ),
               Text(
                 selectedCount == 1 ? '1 selected' : '$selectedCount selected',
@@ -306,12 +279,14 @@ class _ReportRecordsCardState extends State<_ReportRecordsCard> {
           ),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 180),
-            child: _exportingFormat == null
+            child: _exportingFormat == null && !_isAnalyzingWithAi
                 ? const SizedBox.shrink()
                 : Padding(
-                    key: ValueKey(_exportingFormat),
+                    key: ValueKey(_exportingFormat ?? _isAnalyzingWithAi),
                     padding: const EdgeInsets.only(top: 12),
-                    child: _ExportProgressStatus(format: _exportingFormat!),
+                    child: _exportingFormat != null 
+                        ? _ExportProgressStatus(format: _exportingFormat!)
+                        : const _AiProgressStatus(),
                   ),
           ),
           const SizedBox(height: 12),
@@ -440,6 +415,69 @@ class _ReportRecordsCardState extends State<_ReportRecordsCard> {
       }
     }
   }
+
+  Future<void> _analyzeSelectedWithAi() async {
+    final selectedSubmissions = widget.submissions
+        .where(
+          (submission) =>
+              _selectedSubmissionIds.contains(submission.clientSubmissionId),
+        )
+        .toList();
+
+    if (selectedSubmissions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select at least one report record to analyze.')),
+      );
+      return;
+    }
+
+    setState(() => _isAnalyzingWithAi = true);
+
+    var successCount = 0;
+    var failureCount = 0;
+    
+    try {
+      final controller = ref.read(appControllerProvider);
+      
+      for (final submission in selectedSubmissions) {
+        if (!mounted) break;
+        final guidance = await controller.analyzeAndSaveSubmissionGuidance(submission);
+        if (guidance != null) {
+          successCount++;
+        } else {
+          failureCount++;
+        }
+      }
+
+      if (!mounted) return;
+      
+      final label = successCount == 1 ? 'record' : 'records';
+      final failureText = failureCount > 0 ? '\n$failureCount failed.' : '';
+      
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Analysis Complete'),
+          content: Text('Successfully analyzed $successCount $label with AI.$failureText'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to analyze records with AI.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isAnalyzingWithAi = false);
+      }
+    }
+  }
 }
 
 class _ExportButtonIcon extends StatelessWidget {
@@ -493,6 +531,42 @@ class _ExportProgressStatus extends StatelessWidget {
             Flexible(
               child: Text(
                 'Preparing ${format.label} download...',
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AiProgressStatus extends StatelessWidget {
+  const _AiProgressStatus();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colorScheme.primary.withValues(alpha: 0.18)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2.2),
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                'Analyzing selected records with AI...',
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelLarge,
               ),
@@ -592,14 +666,67 @@ final _healthPatternReportFields = [
   ...healthIndicatorFields,
 ];
 
-class _ViewReportSheet extends StatelessWidget {
+class _ViewReportSheet extends ConsumerStatefulWidget {
   const _ViewReportSheet({required this.submission});
 
   final HealthSubmission submission;
 
   @override
+  ConsumerState<_ViewReportSheet> createState() => _ViewReportSheetState();
+}
+
+class _ViewReportSheetState extends ConsumerState<_ViewReportSheet> {
+  bool _isAnalyzing = false;
+
+  Future<void> _analyzeWithAi() async {
+    setState(() => _isAnalyzing = true);
+    try {
+      final controller = ref.read(appControllerProvider);
+      final currentSubmission = controller.activeSubmissions.firstWhere(
+        (s) => s.clientSubmissionId == widget.submission.clientSubmissionId,
+        orElse: () => widget.submission,
+      );
+      final guidance = await controller.analyzeAndSaveSubmissionGuidance(currentSubmission);
+      if (!mounted) return;
+      if (guidance != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Successfully generated AI guidance.')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to generate AI guidance.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error generating AI guidance.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isAnalyzing = false);
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final detailGroups = _reportDetailGroups(submission);
+    final controller = ref.watch(appControllerProvider);
+    final currentSubmission = controller.activeSubmissions.firstWhere(
+      (s) => s.clientSubmissionId == widget.submission.clientSubmissionId,
+      orElse: () => widget.submission,
+    );
+
+    final detailGroups = _reportDetailGroups(
+      currentSubmission,
+      isAnalyzingAi: _isAnalyzing,
+      onAnalyzeAi: _analyzeWithAi,
+      onEditAiFindings: (updated) {
+        ref.read(appControllerProvider).updateReportSubmission(
+          currentSubmission.copyWith(aiGuidance: updated),
+        );
+      },
+    );
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
@@ -633,7 +760,7 @@ class _ViewReportSheet extends StatelessWidget {
                 group,
                 const SizedBox(height: 16),
               ],
-              _ReportEditHistory(entries: submission.editHistory),
+              _ReportEditHistory(entries: currentSubmission.editHistory),
             ],
           ),
         ),
@@ -642,7 +769,12 @@ class _ViewReportSheet extends StatelessWidget {
   }
 }
 
-List<Widget> _reportDetailGroups(HealthSubmission submission) {
+List<Widget> _reportDetailGroups(
+  HealthSubmission submission, {
+  bool isAnalyzingAi = false,
+  VoidCallback? onAnalyzeAi,
+  ValueChanged<AiHealthGuidance>? onEditAiFindings,
+}) {
   final surveyData = _surveyDataWithSubmissionFields(submission);
   final groups = <Widget>[];
 
@@ -655,6 +787,33 @@ List<Widget> _reportDetailGroups(HealthSubmission submission) {
 
   void addSurveyGroup(String title, List<SurveyField> fields) {
     addGroup(title, _surveyResponseWidgets(fields, surveyData));
+  }
+
+  final aiGuidance = submission.aiGuidance;
+  if (aiGuidance != null) {
+    groups.add(AiGuidanceCard(
+      guidance: aiGuidance,
+      isLoading: false,
+      onEdit: onEditAiFindings,
+    ));
+  } else if (onAnalyzeAi != null) {
+    groups.add(
+      _ReportDetailGroup(
+        title: 'AI Analysis',
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed: isAnalyzingAi ? null : onAnalyzeAi,
+              icon: isAnalyzingAi 
+                  ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
+                  : const Icon(Icons.psychology_outlined),
+              label: Text(isAnalyzingAi ? 'Analyzing...' : 'Generate AI Guidance'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   addGroup('I. Demographic Variable', [
@@ -693,10 +852,6 @@ List<Widget> _reportDetailGroups(HealthSubmission submission) {
     'V. Political/Leadership Patterns',
     politicalLeadershipPatternFields,
   );
-  final aiGuidance = submission.aiGuidance;
-  if (aiGuidance != null) {
-    groups.add(AiGuidanceCard(guidance: aiGuidance, isLoading: false));
-  }
   addGroup(
     'VI. Any concerns/suggestions regarding the life style in the area in general',
     [
@@ -1132,9 +1287,11 @@ class _SurveyTableResponse extends StatelessWidget {
           else
             for (var index = 0; index < rows.length; index++)
               Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  'Row ${index + 1}: ${_surveyRowLabel(field.fields, rows[index])}',
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _SurveyTableRowCard(
+                  index: index,
+                  fields: field.fields,
+                  row: rows[index],
                 ),
               ),
         ],
@@ -1143,16 +1300,39 @@ class _SurveyTableResponse extends StatelessWidget {
   }
 }
 
-String _surveyRowLabel(List<SurveyField> fields, Map<String, dynamic> row) {
-  final parts = <String>[];
-  for (final field in fields) {
-    final value = row[field.key];
-    if (!_reportValueHasContent(value)) {
-      continue;
-    }
-    parts.add('${field.label}: ${_reportValueLabel(value)}');
+class _SurveyTableRowCard extends StatelessWidget {
+  const _SurveyTableRowCard({
+    required this.index,
+    required this.fields,
+    required this.row,
+  });
+
+  final int index;
+  final List<SurveyField> fields;
+  final Map<String, dynamic> row;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Member ${index + 1}',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          for (final field in fields)
+            if (_reportValueHasContent(row[field.key]))
+              _ReportDetailRow(
+                label: field.label,
+                value: _reportValueLabel(row[field.key]),
+              ),
+        ],
+      ),
+    );
   }
-  return parts.isEmpty ? 'No details' : parts.join('; ');
 }
 
 String _reportValueLabel(Object? value) {
@@ -1936,118 +2116,4 @@ String _optionValue(List<String> options, String currentValue) {
     return options.first;
   }
   return normalizedValue;
-}
-
-class _BreakdownCard extends StatelessWidget {
-  const _BreakdownCard({
-    required this.title,
-    required this.values,
-    required this.color,
-  });
-
-  final String title;
-  final Map<String, int> values;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final entries = values.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          if (entries.isEmpty)
-            Text(
-              'No responses yet.',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: KasudloColors.muted),
-            )
-          else
-            SizedBox(
-              height: 190,
-              child: PieChart(
-                PieChartData(
-                  sectionsSpace: 2,
-                  centerSpaceRadius: 42,
-                  sections: [
-                    for (var i = 0; i < entries.length; i++)
-                      PieChartSectionData(
-                        value: entries[i].value.toDouble(),
-                        title: '${entries[i].value}',
-                        radius: 42,
-                        color:
-                            Color.lerp(color, KasudloColors.border, i / 5) ??
-                            color,
-                        titleStyle: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          const SizedBox(height: 8),
-          for (final entry in entries)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Row(
-                children: [
-                  Expanded(child: Text(entry.key)),
-                  Text('${entry.value}'),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RankedListCard extends StatelessWidget {
-  const _RankedListCard({
-    required this.title,
-    required this.values,
-    required this.emptyText,
-  });
-
-  final String title;
-  final Map<String, int> values;
-  final String emptyText;
-
-  @override
-  Widget build(BuildContext context) {
-    final entries = values.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          if (entries.isEmpty)
-            Text(
-              emptyText,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: KasudloColors.muted),
-            )
-          else
-            for (final entry in entries.take(6))
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.trending_up),
-                title: Text(entry.key),
-                trailing: StatusBadge(label: '${entry.value}'),
-              ),
-        ],
-      ),
-    );
-  }
 }

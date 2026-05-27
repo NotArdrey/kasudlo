@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 class KasudloColors {
-  static const primary = Color(0xFF0F766E);
-  static const primaryDark = Color(0xFF005C55);
-  static const secondary = Color(0xFF4F46E5);
+  static const primary = Color(0xFF2A84E6);
+  static const primaryDark = Color(0xFF0A2D6B);
+  static const secondary = Color(0xFF38BDF8);
   static const warning = Color(0xFFD97706);
   static const critical = Color(0xFFE11D48);
   static const surface = Color(0xFFF8F9FA);

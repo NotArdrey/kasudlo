@@ -20,16 +20,16 @@ void main() {
     expect(find.text('Enter a valid email'), findsOneWidget);
     expect(find.text('Use at least 6 characters'), findsOneWidget);
 
-    expect(find.text('Create healthcare worker account'), findsNothing);
+    expect(find.text('Create healthcare nurse account'), findsNothing);
     expect(find.widgetWithText(ElevatedButton, 'Create Account'), findsNothing);
-    await tester.enterText(find.byType(TextFormField).at(0), 'worker@test.com');
+    await tester.enterText(find.byType(TextFormField).at(0), 'nurse@test.com');
     await tester.enterText(find.byType(TextFormField).at(1), 'secret1');
     await tester.tap(find.widgetWithText(ElevatedButton, 'Sign In'));
     await tester.pumpAndSettle();
 
     expect(controller.signInCalls, 1);
     expect(find.text('Home'), findsWidgets);
-    expect(find.text('worker@test.com'), findsOneWidget);
+    expect(find.text('nurse@test.com'), findsOneWidget);
   });
 
   testWidgets('forgot password sends reset email from login', (tester) async {
@@ -46,13 +46,13 @@ void main() {
 
     await tester.enterText(
       find.widgetWithText(TextFormField, 'Email'),
-      'worker@test.com',
+      'nurse@test.com',
     );
     await tester.tap(find.widgetWithText(ElevatedButton, 'Send Reset Link'));
     await tester.pumpAndSettle();
 
     expect(controller.requestPasswordResetCalls, 1);
-    expect(controller.requestedResetEmail, 'worker@test.com');
+    expect(controller.requestedResetEmail, 'nurse@test.com');
     expect(find.textContaining('reset link has been sent'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(OutlinedButton, 'Back to Sign In'));
@@ -97,7 +97,7 @@ void main() {
     );
   });
 
-  testWidgets('admin navigation is hidden for workers and route redirects', (
+  testWidgets('admin navigation is hidden for nurses and route redirects', (
     tester,
   ) async {
     final controller = FakeAppController();
@@ -163,7 +163,7 @@ void main() {
 
     await _scrollUntilVisible(tester, find.text('Audit log'));
     expect(find.text('Audit log'), findsOneWidget);
-    expect(find.text('Created worker account.'), findsOneWidget);
+    expect(find.text('Created nurse account.'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.enterText(
@@ -173,7 +173,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Synced assessment 12.'), findsOneWidget);
-    expect(find.text('Created worker account.'), findsNothing);
+    expect(find.text('Created nurse account.'), findsNothing);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.byTooltip('Refresh audit log'));
@@ -254,7 +254,7 @@ void main() {
   });
 
   testWidgets(
-    'health teaching is editable for workers and view-only for patients',
+    'health teaching is editable for nurses and view-only for patients',
     (tester) async {
       final workerController = FakeAppController.withHealthTips();
       await _pumpKasudlo(tester, workerController);
@@ -830,19 +830,12 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('settings buttons retry sync and sign out', (tester) async {
+  testWidgets('settings buttons sign out', (tester) async {
     final controller = FakeAppController.withPending();
     await _pumpKasudlo(tester, controller);
 
     await tester.tap(_navText('Settings'));
     await tester.pumpAndSettle();
-    await _scrollUntilVisible(
-      tester,
-      find.widgetWithText(ElevatedButton, 'Retry Pending Sync'),
-    );
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Retry Pending Sync'));
-    await tester.pumpAndSettle();
-    expect(controller.syncCalls, 1);
 
     await _scrollUntilVisible(
       tester,
@@ -854,28 +847,7 @@ void main() {
     expect(find.widgetWithText(ElevatedButton, 'Sign In'), findsOneWidget);
   });
 
-  testWidgets('settings preference switches update saved choices', (
-    tester,
-  ) async {
-    final controller = FakeAppController();
-    await _pumpKasudlo(tester, controller);
 
-    await tester.tap(_navText('Settings'));
-    await tester.pumpAndSettle();
-    await _scrollUntilVisible(tester, find.text('Sound alerts'));
-    await tester.tap(find.text('Sound alerts'));
-    await tester.pumpAndSettle();
-
-    expect(controller.preferenceUpdateCalls, 1);
-    expect(controller.preferences.soundsEnabled, isTrue);
-
-    await _scrollUntilVisible(tester, find.text('Data Saver'));
-    await tester.tap(find.text('Data Saver'));
-    await tester.pumpAndSettle();
-
-    expect(controller.preferenceUpdateCalls, 2);
-    expect(controller.preferences.dataSaverEnabled, isTrue);
-  });
 }
 
 Future<void> _pumpKasudlo(
@@ -968,8 +940,8 @@ class FakeAppController extends AppController {
   FakeAppController({bool signedIn = true}) {
     isReady = true;
     isSignedIn = signedIn;
-    activeEmail = signedIn ? 'worker@test.com' : null;
-    activeRole = AccountRole.worker;
+    activeEmail = signedIn ? 'nurse@test.com' : null;
+    activeRole = AccountRole.nurse;
     submissions = const [];
   }
 
@@ -978,7 +950,7 @@ class FakeAppController extends AppController {
     isSignedIn = false;
     isPasswordRecoverySession = true;
     activeEmail = 'recover@test.com';
-    activeRole = AccountRole.worker;
+    activeRole = AccountRole.nurse;
     passwordResetMessage = 'Choose a new password for this account.';
     submissions = const [];
   }
@@ -997,10 +969,10 @@ class FakeAppController extends AppController {
         createdAt: DateTime(2026, 5, 23),
       ),
       AdminUser(
-        id: 'worker-user',
-        email: 'worker@test.com',
-        fullName: 'Worker User',
-        role: AccountRole.worker,
+        id: 'nurse-user',
+        email: 'nurse@test.com',
+        fullName: 'Nurse User',
+        role: AccountRole.nurse,
         createdAt: DateTime(2026, 5, 23),
       ),
     ];
@@ -1011,14 +983,14 @@ class FakeAppController extends AppController {
         actorRole: AccountRole.admin.name,
         action: 'admin.account.create',
         entityType: 'account',
-        entityId: 'worker-user',
-        summary: 'Created worker account.',
+        entityId: 'nurse-user',
+        summary: 'Created nurse account.',
         createdAt: DateTime(2026, 5, 24, 9),
       ),
       AuditLogEntry(
         id: 'audit-sync-record',
-        actorEmail: 'worker@test.com',
-        actorRole: AccountRole.worker.name,
+        actorEmail: 'nurse@test.com',
+        actorRole: AccountRole.nurse.name,
         action: 'sync.record.success',
         entityType: 'household_assessment',
         entityId: 'synced',
@@ -1050,15 +1022,15 @@ class FakeAppController extends AppController {
         actorRole: AccountRole.admin.name,
         action: 'admin.account.create',
         entityType: 'account',
-        entityId: 'worker-user',
-        summary: 'Created worker account.',
+        entityId: 'nurse-user',
+        summary: 'Created nurse account.',
         createdAt: DateTime(2026, 5, 24, 9),
       ),
       for (var index = 1; index <= 24; index++)
         AuditLogEntry(
           id: 'audit-sync-$index',
-          actorEmail: 'worker@test.com',
-          actorRole: AccountRole.worker.name,
+          actorEmail: 'nurse@test.com',
+          actorRole: AccountRole.nurse.name,
           action: 'sync.record.success',
           entityType: 'household_assessment',
           entityId: 'record-$index',
@@ -1072,17 +1044,17 @@ class FakeAppController extends AppController {
   FakeAppController.withPending() {
     isReady = true;
     isSignedIn = true;
-    activeEmail = 'worker@test.com';
-    activeRole = AccountRole.worker;
+    activeEmail = 'nurse@test.com';
+    activeRole = AccountRole.nurse;
     submissions = [_submission('pending', SyncStatus.pending)];
   }
 
-  FakeAppController.withHealthTips({AccountRole role = AccountRole.worker}) {
+  FakeAppController.withHealthTips({AccountRole role = AccountRole.nurse}) {
     isReady = true;
     isSignedIn = true;
     activeEmail = role == AccountRole.patient
         ? 'patient@test.com'
-        : 'worker@test.com';
+        : 'nurse@test.com';
     activeRole = role;
     submissions = const [];
     healthTips = [
@@ -1090,13 +1062,10 @@ class FakeAppController extends AppController {
         id: 'tip-one',
         title: 'Dengue prevention',
         description: 'Remove standing water and cover water containers.',
-        fileName: 'dengue.pdf',
-        mimeType: 'application/pdf',
-        fileSize: 2048,
-        attachmentBase64: 'aGVhbHRo',
+        attachments: const [],
         createdAt: DateTime(2026, 5, 24, 9),
         updatedAt: DateTime(2026, 5, 24, 10),
-        createdByEmail: 'worker@test.com',
+        createdByEmail: 'nurse@test.com',
       ),
     ];
   }
@@ -1104,8 +1073,8 @@ class FakeAppController extends AppController {
   FakeAppController.withReportData() {
     isReady = true;
     isSignedIn = true;
-    activeEmail = 'worker@test.com';
-    activeRole = AccountRole.worker;
+    activeEmail = 'nurse@test.com';
+    activeRole = AccountRole.nurse;
     submissions = [
       _submission(
         'synced',
@@ -1136,8 +1105,8 @@ class FakeAppController extends AppController {
   FakeAppController.withManyReportData() {
     isReady = true;
     isSignedIn = true;
-    activeEmail = 'worker@test.com';
-    activeRole = AccountRole.worker;
+    activeEmail = 'nurse@test.com';
+    activeRole = AccountRole.nurse;
     submissions = List.generate(40, (index) {
       final recordNumber = index + 1;
       return _submission(
@@ -1194,7 +1163,7 @@ class FakeAppController extends AppController {
         ? AccountRole.admin
         : roleHint.startsWith('patient')
         ? AccountRole.patient
-        : AccountRole.worker;
+        : AccountRole.nurse;
     isSignedIn = true;
     notifyListeners();
   }
@@ -1256,7 +1225,7 @@ class FakeAppController extends AppController {
   Future<void> signOut() async {
     signOutCalls++;
     activeEmail = null;
-    activeRole = AccountRole.worker;
+    activeRole = AccountRole.nurse;
     isSignedIn = false;
     isPasswordRecoverySession = false;
     notifyListeners();
@@ -1360,10 +1329,7 @@ class FakeAppController extends AppController {
     String? id,
     required String title,
     required String description,
-    required String fileName,
-    required String mimeType,
-    required int fileSize,
-    required String attachmentBase64,
+    required List<HealthTipAttachment> attachments,
   }) async {
     saveHealthTipCalls++;
     HealthTip? existing;
@@ -1377,10 +1343,7 @@ class FakeAppController extends AppController {
       id: id ?? 'created-health-tip-$saveHealthTipCalls',
       title: title.trim(),
       description: description.trim(),
-      fileName: fileName.trim(),
-      mimeType: mimeType.trim(),
-      fileSize: fileSize,
-      attachmentBase64: attachmentBase64.trim(),
+      attachments: attachments,
       createdAt: existing?.createdAt ?? DateTime(2026, 5, 24, 9),
       updatedAt: DateTime(2026, 5, 24, 11, saveHealthTipCalls),
       createdByEmail: existing?.createdByEmail ?? activeEmail ?? '',

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models.dart';
 import '../theme.dart';
+import 'ai_guidance_card_editor.dart';
 import 'app_chrome.dart';
 
 class AiGuidanceCard extends StatelessWidget {
@@ -10,12 +11,14 @@ class AiGuidanceCard extends StatelessWidget {
     required this.guidance,
     required this.isLoading,
     this.onGenerate,
+    this.onEdit,
     this.errorMessage,
   });
 
   final AiHealthGuidance? guidance;
   final bool isLoading;
   final VoidCallback? onGenerate;
+  final ValueChanged<AiHealthGuidance>? onEdit;
   final String? errorMessage;
 
   @override
@@ -57,6 +60,22 @@ class AiGuidanceCard extends StatelessWidget {
                 currentGuidance == null ? 'Generate AI' : 'Refresh AI',
               ),
             ),
+          if (onEdit != null && currentGuidance != null) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final updated = await showDialog<AiHealthGuidance>(
+                  context: context,
+                  builder: (ctx) => AiGuidanceEditorDialog(guidance: currentGuidance),
+                );
+                if (updated != null) {
+                  onEdit!(updated);
+                }
+              },
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('Edit Findings'),
+            ),
+          ],
           if (errorMessage != null) ...[
             const SizedBox(height: 12),
             Text(
@@ -89,7 +108,7 @@ class _GuidanceBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (guidance.summary.trim().isNotEmpty)
           Text(guidance.summary, style: Theme.of(context).textTheme.bodyLarge),
@@ -211,7 +230,7 @@ class _CareSuggestions extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 14),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [

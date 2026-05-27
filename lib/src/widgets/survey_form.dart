@@ -139,6 +139,45 @@ class _SurveyFieldInput extends StatelessWidget {
                 onChanged: (rows) => onChanged(field.key, rows),
                 path: path,
               ),
+      SurveyFieldType.priorityRankingGroup => _SurveyPriorityRankingGroup(
+        label: field.label,
+        data: data,
+        onChanged: onChanged,
+      ),
+      SurveyFieldType.yesNoCheckbox => _SurveyYesNoCheckbox(
+        label: field.label,
+        value: _stringValue(value),
+        onChanged: (nextValue) => onChanged(field.key, nextValue),
+      ),
+      SurveyFieldType.singleSelectCheckbox => _SurveySingleSelectCheckbox(
+        label: field.label,
+        value: _stringValue(value),
+        options: field.options,
+        onChanged: (nextValue) => onChanged(field.key, nextValue),
+      ),
+      SurveyFieldType.multiSelectCheckbox => _SurveyMultiSelectCheckbox(
+        label: field.label,
+        values: _stringSet(value),
+        options: field.options,
+        onChanged: (nextValue) => onChanged(field.key, nextValue.toList()..sort()),
+      ),
+      SurveyFieldType.vaccineGrid => _SurveyVaccineGrid(
+        label: field.label,
+        rows: _rowList(value),
+        onChanged: (rows) => onChanged(field.key, rows),
+        path: path,
+      ),
+      SurveyFieldType.mealTimeGroup => _SurveyMealTimeGroup(
+        label: field.label,
+        rows: _rowList(value),
+        onChanged: (rows) => onChanged(field.key, rows),
+        path: path,
+      ),
+      SurveyFieldType.familyName => _SurveyFamilyNameField(
+        label: field.label,
+        value: _stringValue(value),
+        onChanged: (nextValue) => onChanged(field.key, nextValue),
+      ),
       SurveyFieldType.note => _SurveyNote(field: field),
       SurveyFieldType.heading => _SurveyHeading(label: field.label),
     };
@@ -443,33 +482,6 @@ class _SurveyMultiSelectField extends StatelessWidget {
   }
 }
 
-class _SurveyCheckboxField extends StatelessWidget {
-  const _SurveyCheckboxField({
-    required this.label,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String label;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return _SurveyRowContainer(
-      padding: EdgeInsets.zero,
-      child: CheckboxListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-        value: value,
-        onChanged: (nextValue) => onChanged(nextValue ?? false),
-        title: Text(label, style: Theme.of(context).textTheme.bodyMedium),
-        controlAffinity: ListTileControlAffinity.leading,
-        dense: true,
-        visualDensity: VisualDensity.compact,
-      ),
-    );
-  }
-}
 
 class _SurveyLabeledControl extends StatelessWidget {
   const _SurveyLabeledControl({
@@ -937,7 +949,7 @@ InputDecoration _surveyInputDecoration(
   );
 }
 
-bool _usesExternalSurveyLabel(String label) => label.trim().length > 22;
+bool _usesExternalSurveyLabel(String label) => true;
 
 double? _parseDecimal(Object? value) {
   if (value is num) {
@@ -1011,4 +1023,523 @@ TimeOfDay? _parseTimeOfDay(String value) {
     return null;
   }
   return TimeOfDay(hour: hour, minute: minute);
+}
+
+class SurveyContext extends InheritedWidget {
+  const SurveyContext({
+    super.key,
+    required this.surveyData,
+    required this.onGlobalChanged,
+    required super.child,
+  });
+
+  final Map<String, dynamic> surveyData;
+  final void Function(String key, Object? value) onGlobalChanged;
+
+  static SurveyContext? maybeOf(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<SurveyContext>();
+  }
+
+  static SurveyContext of(BuildContext context) {
+    final result = maybeOf(context);
+    assert(result != null, 'No SurveyContext found in context');
+    return result!;
+  }
+
+  @override
+  bool updateShouldNotify(SurveyContext oldWidget) {
+    return surveyData != oldWidget.surveyData || onGlobalChanged != oldWidget.onGlobalChanged;
+  }
+}
+
+class _SurveyFamilyNameField extends StatefulWidget {
+  const _SurveyFamilyNameField({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_SurveyFamilyNameField> createState() => _SurveyFamilyNameFieldState();
+}
+
+class _SurveyFamilyNameFieldState extends State<_SurveyFamilyNameField> {
+  FocusNode? _currentFocusNode;
+  TextEditingController? _currentController;
+  
+  @override
+  void dispose() {
+    _currentFocusNode?.removeListener(_onFocusChanged);
+    _currentController?.removeListener(_onTextChanged);
+    super.dispose();
+  }
+
+  void _onFocusChanged() {
+    if (_currentFocusNode != null && !_currentFocusNode!.hasFocus) {
+      _checkAndAddNewMember(_currentController!.text);
+    }
+  }
+
+  void _onTextChanged() {
+    if (_currentController != null) {
+      widget.onChanged(_currentController!.text);
+    }
+  }
+
+  void _checkAndAddNewMember(String text) {
+    if (text.trim().isEmpty) return;
+
+    final surveyContext = SurveyContext.maybeOf(context);
+    if (surveyContext == null) return;
+
+    final surveyData = surveyContext.surveyData;
+    final informant = _stringValue(surveyData['informant']);
+    final familyRows = _rowList(surveyData['family_members']);
+
+    if (informant.toLowerCase() == text.toLowerCase()) return;
+    for (final row in familyRows) {
+      if (_stringValue(row['name_of_family_member']).toLowerCase() == text.toLowerCase()) {
+        return;
+      }
+    }
+
+    final newRows = List<Map<String, dynamic>>.from(familyRows);
+    newRows.add({
+      'name_of_family_member': text,
+      'member_no': newRows.length + 1,
+    });
+    surveyContext.onGlobalChanged('family_members', newRows);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final useExternalLabel = _usesExternalSurveyLabel(widget.label);
+    final surveyContext = SurveyContext.maybeOf(context);
+    final surveyData = surveyContext?.surveyData ?? {};
+    final informant = _stringValue(surveyData['informant']);
+    final familyRows = _rowList(surveyData['family_members']);
+
+    final options = <String>[];
+    if (informant.isNotEmpty) options.add(informant);
+    for (final row in familyRows) {
+      final name = _stringValue(row['name_of_family_member']);
+      if (name.isNotEmpty && !options.contains(name)) {
+        options.add(name);
+      }
+    }
+
+    return _SurveyLabeledControl(
+      label: widget.label,
+      useExternalLabel: useExternalLabel,
+      child: Autocomplete<String>(
+        initialValue: TextEditingValue(text: widget.value),
+        optionsBuilder: (TextEditingValue textEditingValue) {
+          if (textEditingValue.text.isEmpty) {
+            return options;
+          }
+          return options.where((String option) {
+            return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+          });
+        },
+        onSelected: (String selection) {
+          widget.onChanged(selection);
+        },
+        fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+          if (_currentFocusNode != focusNode) {
+            _currentFocusNode?.removeListener(_onFocusChanged);
+            _currentFocusNode = focusNode;
+            _currentFocusNode!.addListener(_onFocusChanged);
+          }
+          if (_currentController != controller) {
+            _currentController?.removeListener(_onTextChanged);
+            _currentController = controller;
+            _currentController!.addListener(_onTextChanged);
+          }
+
+          return TextFormField(
+            controller: controller,
+            focusNode: focusNode,
+            decoration: _surveyInputDecoration(
+              widget.label,
+              useExternalLabel: useExternalLabel,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SurveySingleSelectCheckbox extends StatelessWidget {
+  const _SurveySingleSelectCheckbox({
+    required this.label,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String value;
+  final List<String> options;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ),
+        ...options.map((option) => CheckboxListTile(
+          title: Text(option),
+          value: value == option,
+          onChanged: (checked) {
+            if (checked == true) {
+              onChanged(option);
+            }
+          },
+        )),
+      ],
+    );
+  }
+}
+
+class _SurveyMultiSelectCheckbox extends StatelessWidget {
+  const _SurveyMultiSelectCheckbox({
+    required this.label,
+    required this.values,
+    required this.options,
+    required this.onChanged,
+  });
+
+  final String label;
+  final Set<String> values;
+  final List<String> options;
+  final ValueChanged<Set<String>> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ),
+        ...options.map((option) => CheckboxListTile(
+          title: Text(option),
+          value: values.contains(option),
+          onChanged: (checked) {
+            final nextValues = Set<String>.from(values);
+            if (checked == true) {
+              nextValues.add(option);
+            } else {
+              nextValues.remove(option);
+            }
+            onChanged(nextValues);
+          },
+        )),
+      ],
+    );
+  }
+}
+
+class _SurveyYesNoCheckbox extends StatelessWidget {
+  const _SurveyYesNoCheckbox({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ),
+        CheckboxListTile(
+          title: const Text('Yes'),
+          value: value == 'Yes',
+          onChanged: (checked) {
+            if (checked == true) onChanged('Yes');
+          },
+        ),
+        CheckboxListTile(
+          title: const Text('No'),
+          value: value == 'No',
+          onChanged: (checked) {
+            if (checked == true) onChanged('No');
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _SurveyVaccineGrid extends StatelessWidget {
+  const _SurveyVaccineGrid({
+    required this.label,
+    required this.rows,
+    required this.onChanged,
+    required this.path,
+  });
+
+  final String label;
+  final List<Map<String, dynamic>> rows;
+  final ValueChanged<List<Map<String, dynamic>>> onChanged;
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columns: const [
+              DataColumn(label: Text('Name')),
+              DataColumn(label: Text('Age')),
+              DataColumn(label: Text('Vaccine')),
+            ],
+            rows: rows.map((row) {
+              return DataRow(cells: [
+                DataCell(Text(_stringValue(row['name']))),
+                DataCell(Text(_stringValue(row['age']))),
+                DataCell(Text(_stringValue(row['vaccine']))),
+              ]);
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SurveyMealTimeGroup extends StatelessWidget {
+  const _SurveyMealTimeGroup({
+    required this.label,
+    required this.rows,
+    required this.onChanged,
+    required this.path,
+  });
+
+  final String label;
+  final List<Map<String, dynamic>> rows;
+  final ValueChanged<List<Map<String, dynamic>>> onChanged;
+  final String path;
+
+  Widget _buildMealRow(BuildContext context, String title, IconData icon, String value, ValueChanged<String> onChanged) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: _SurveyTextField(
+              label: title,
+              value: value,
+              onChanged: onChanged,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Map<String, String> mealMap = {};
+    for (final row in rows) {
+      mealMap[_stringValue(row['time_of_day'])] = _stringValue(row['food_taken']);
+    }
+
+    void updateMeal(String time, String food) {
+      final nextRows = <Map<String, dynamic>>[];
+      final nextMap = Map<String, String>.from(mealMap);
+      nextMap[time] = food;
+      for (final entry in nextMap.entries) {
+        if (entry.value.isNotEmpty) {
+          nextRows.add({'time_of_day': entry.key, 'food_taken': entry.value});
+        }
+      }
+      onChanged(nextRows);
+    }
+
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: KasudloColors.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              label,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+            _buildMealRow(context, 'Breakfast', Icons.wb_twilight, mealMap['Breakfast'] ?? '', (v) => updateMeal('Breakfast', v)),
+            _buildMealRow(context, 'AM Snack', Icons.bakery_dining, mealMap['AM Snack'] ?? '', (v) => updateMeal('AM Snack', v)),
+            _buildMealRow(context, 'Lunch', Icons.wb_sunny, mealMap['Lunch'] ?? '', (v) => updateMeal('Lunch', v)),
+            _buildMealRow(context, 'PM Snack', Icons.local_cafe, mealMap['PM Snack'] ?? '', (v) => updateMeal('PM Snack', v)),
+            _buildMealRow(context, 'Dinner', Icons.nights_stay, mealMap['Dinner'] ?? '', (v) => updateMeal('Dinner', v)),
+            _buildMealRow(context, 'Midnight Snack', Icons.bedtime, mealMap['Midnight Snack'] ?? '', (v) => updateMeal('Midnight Snack', v)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SurveyCheckboxField extends StatelessWidget {
+  const _SurveyCheckboxField({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SurveyRowContainer(
+      padding: EdgeInsets.zero,
+      child: CheckboxListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+        value: value,
+        onChanged: (nextValue) => onChanged(nextValue ?? false),
+        title: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+        controlAffinity: ListTileControlAffinity.leading,
+        dense: true,
+        visualDensity: VisualDensity.compact,
+      ),
+    );
+  }
+}
+
+class _SurveyPriorityRankingGroup extends StatelessWidget {
+  const _SurveyPriorityRankingGroup({
+    required this.label,
+    required this.data,
+    required this.onChanged,
+  });
+
+  final String label;
+  final Map<String, dynamic> data;
+  final void Function(String key, Object? value) onChanged;
+
+  static const _fields = [
+    ('priority_food_rank', 'Food'),
+    ('priority_clothing_rank', 'Clothing'),
+    ('priority_education_rank', 'Education'),
+    ('priority_utilities_rank', 'Utilities'),
+    ('priority_health_rank', 'Health'),
+    ('priority_recreation_rank', 'Recreation'),
+    ('priority_savings_rank', 'Savings'),
+  ];
+
+  void _handleRankChange(String changingKey, String? newRank) {
+    if (newRank == null) return;
+    
+    String? conflictingKey;
+    for (final field in _fields) {
+      if (field.$1 != changingKey && _stringValue(data[field.$1]) == newRank) {
+        conflictingKey = field.$1;
+        break;
+      }
+    }
+
+    final oldRank = _stringValue(data[changingKey]);
+
+    if (conflictingKey != null && oldRank.isNotEmpty) {
+      onChanged(conflictingKey, oldRank);
+    } else if (conflictingKey != null) {
+      onChanged(conflictingKey, '');
+    }
+
+    onChanged(changingKey, newRank);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: KasudloColors.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              label,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ..._fields.map((field) {
+              final val = _stringValue(data[field.$1]);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12.0),
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey(field.$1 + val),
+                  initialValue: val.isEmpty ? null : val,
+                  decoration: _surveyInputDecoration(field.$2, useExternalLabel: true),
+                  hint: const Text('Select rank 1-7'),
+                  items: [
+                    for (var i = 1; i <= 7; i++)
+                      DropdownMenuItem(
+                        value: '$i',
+                        child: Text('$i', overflow: TextOverflow.ellipsis),
+                      ),
+                  ],
+                  onChanged: (v) => _handleRankChange(field.$1, v),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
 }
