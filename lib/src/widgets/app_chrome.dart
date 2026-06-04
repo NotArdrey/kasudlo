@@ -11,6 +11,7 @@ class AppPage extends StatelessWidget {
     this.actions = const [],
     this.controller,
     this.floatingActionButton,
+    this.leading,
   });
 
   final String title;
@@ -19,6 +20,7 @@ class AppPage extends StatelessWidget {
   final List<Widget> actions;
   final ScrollController? controller;
   final Widget? floatingActionButton;
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +34,7 @@ class AppPage extends StatelessWidget {
           backgroundColor: KasudloColors.primary,
           iconTheme: const IconThemeData(color: Colors.white),
           actionsIconTheme: const IconThemeData(color: Colors.white),
+          leading: leading,
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,

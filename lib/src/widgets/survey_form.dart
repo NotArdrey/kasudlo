@@ -161,12 +161,7 @@ class _SurveyFieldInput extends StatelessWidget {
         options: field.options,
         onChanged: (nextValue) => onChanged(field.key, nextValue.toList()..sort()),
       ),
-      SurveyFieldType.vaccineGrid => _SurveyVaccineGrid(
-        label: field.label,
-        rows: _rowList(value),
-        onChanged: (rows) => onChanged(field.key, rows),
-        path: path,
-      ),
+
       SurveyFieldType.mealTimeGroup => _SurveyMealTimeGroup(
         label: field.label,
         rows: _rowList(value),
@@ -1289,49 +1284,6 @@ class _SurveyYesNoCheckbox extends StatelessWidget {
   }
 }
 
-class _SurveyVaccineGrid extends StatelessWidget {
-  const _SurveyVaccineGrid({
-    required this.label,
-    required this.rows,
-    required this.onChanged,
-    required this.path,
-  });
-
-  final String label;
-  final List<Map<String, dynamic>> rows;
-  final ValueChanged<List<Map<String, dynamic>>> onChanged;
-  final String path;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8.0),
-          child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-        ),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            columns: const [
-              DataColumn(label: Text('Name')),
-              DataColumn(label: Text('Age')),
-              DataColumn(label: Text('Vaccine')),
-            ],
-            rows: rows.map((row) {
-              return DataRow(cells: [
-                DataCell(Text(_stringValue(row['name']))),
-                DataCell(Text(_stringValue(row['age']))),
-                DataCell(Text(_stringValue(row['vaccine']))),
-              ]);
-            }).toList(),
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _SurveyMealTimeGroup extends StatelessWidget {
   const _SurveyMealTimeGroup({

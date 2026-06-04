@@ -14,7 +14,6 @@ enum SurveyFieldType {
   yesNoCheckbox,
   singleSelectCheckbox,
   multiSelectCheckbox,
-  vaccineGrid,
   mealTimeGroup,
   familyName,
 }
@@ -236,16 +235,7 @@ SurveyField multiSelectCheckboxField(
   visibleWhen: visibleWhen,
 );
 
-SurveyField vaccineGridField(
-  String key,
-  String label, {
-  SurveyVisibility? visibleWhen,
-}) => SurveyField(
-  key: key,
-  label: label,
-  type: SurveyFieldType.vaccineGrid,
-  visibleWhen: visibleWhen,
-);
+
 
 SurveyField priorityRankingGroupField(String key, String label, {SurveyVisibility? visibleWhen}) {
   return SurveyField(
@@ -1297,9 +1287,29 @@ final communityHealthProgramFields = [
       'Others',
     ),
   ),
-  vaccineGridField(
+  tableField(
     'immunization_records',
     'Immunization records',
+    [
+      familyNameField('name', 'Name'),
+      numberField('age_in_mos', 'Age in mos'),
+      selectField('gender', 'Gender', ['Male', 'Female']),
+      booleanField('bcg', 'BCG'),
+      booleanField('dpt_1', 'DPT 1'),
+      booleanField('dpt_2', 'DPT 2'),
+      booleanField('dpt_3', 'DPT 3'),
+      booleanField('hepa_b_1', 'Hepa B 1'),
+      booleanField('hepa_b_2', 'Hepa B 2'),
+      booleanField('hepa_b_3', 'Hepa B 3'),
+      booleanField('opv_1', 'OPV 1'),
+      booleanField('opv_2', 'OPV 2'),
+      booleanField('opv_3', 'OPV 3'),
+      booleanField('measles', 'Measles'),
+      booleanField('complete_according_to_age', 'Complete according to Age'),
+      booleanField('incomplete_according_to_age', 'Incomplete accdg to Age'),
+      booleanField('fully_immunized_child', 'Fully Immunized Child'),
+    ],
+    addButtonLabel: 'Add Record',
   ),
   yesNoCheckboxField(
     'has_pregnant_woman',

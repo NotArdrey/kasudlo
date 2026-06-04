@@ -64,7 +64,7 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       if (_nameController.text.trim().isNotEmpty) {
-        _save(submit: false);
+        _save(submit: false, silent: true);
       }
     }
   }
@@ -91,13 +91,21 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
     return PopScope(
       onPopInvokedWithResult: (didPop, result) {
         if (_nameController.text.trim().isNotEmpty) {
-          _save(submit: false);
+          _save(submit: false, silent: true);
         }
       },
       child: AppPage(
         title: 'Collect Data',
         subtitle: 'Household health assessment',
         controller: _scrollController,
+        leading: BackButton(
+          onPressed: () {
+            if (_nameController.text.trim().isNotEmpty) {
+              _save(submit: false, silent: true);
+            }
+            context.go('/home');
+          },
+        ),
       children: [
         Form(
           key: _formKey,
@@ -284,23 +292,27 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
     });
   }
 
-  Future<void> _save({required bool submit}) async {
+  Future<void> _save({required bool submit, bool silent = false}) async {
     if (!_profileFieldsAreValid()) {
-      setState(() => _currentPart = _CollectPart.demographic);
-      await Future<void>.delayed(Duration.zero);
-      _formKey.currentState?.validate();
-      if (!mounted) {
-        return;
+      if (!silent) {
+        setState(() => _currentPart = _CollectPart.demographic);
+        await Future<void>.delayed(Duration.zero);
+        _formKey.currentState?.validate();
+        if (!mounted) {
+          return;
+        }
+        _showMessage('Complete community profile first.');
       }
-      _showMessage('Complete community profile first.');
       return;
     }
     if (!_formKey.currentState!.validate()) {
       return;
     }
     if (submit && !_consentGiven) {
-      setState(() => _currentPart = _CollectPart.concerns);
-      _showMessage('Consent is required before submitting.');
+      if (!silent) {
+        setState(() => _currentPart = _CollectPart.concerns);
+        _showMessage('Consent is required before submitting.');
+      }
       return;
     }
 
@@ -314,16 +326,18 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
     AiHealthGuidance? guidance;
 
     if (submit) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      if (!silent) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+      }
       await controller.submit(submission);
       guidance = await controller.analyzeAndSaveSubmissionGuidance(submission);
-      if (mounted) {
+      if (mounted && !silent) {
         Navigator.of(context).pop();
       }
     } else {
@@ -334,19 +348,19 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
       return;
     }
     if (submit) {
-      _showMessage('Record queued for sync.');
-      if (guidance != null) {
+      if (!silent) _showMessage('Record queued for sync.');
+      if (guidance != null && !silent) {
         await _showSubmittedGuidance(guidance);
         if (!mounted) {
           return;
         }
       }
       _resetForm();
-      if (mounted) {
+      if (mounted && !silent) {
         context.go('/reports');
       }
     } else {
-      _showMessage('Draft saved.');
+      if (!silent) _showMessage('Draft saved.');
     }
   }
 
