@@ -159,7 +159,8 @@ class _SurveyFieldInput extends StatelessWidget {
         label: field.label,
         values: _stringSet(value),
         options: field.options,
-        onChanged: (nextValue) => onChanged(field.key, nextValue.toList()..sort()),
+        onChanged: (nextValue) =>
+            onChanged(field.key, nextValue.toList()..sort()),
       ),
 
       SurveyFieldType.mealTimeGroup => _SurveyMealTimeGroup(
@@ -218,6 +219,7 @@ class _SurveyTextField extends StatefulWidget {
     this.readOnly = false,
     this.suffixIcon,
     this.onTap,
+    this.fieldKey,
   });
 
   final String value;
@@ -229,6 +231,7 @@ class _SurveyTextField extends StatefulWidget {
   final bool readOnly;
   final IconData? suffixIcon;
   final VoidCallback? onTap;
+  final Key? fieldKey;
 
   @override
   State<_SurveyTextField> createState() => _SurveyTextFieldState();
@@ -270,6 +273,7 @@ class _SurveyTextFieldState extends State<_SurveyTextField> {
       label: widget.label,
       useExternalLabel: useExternalLabel,
       child: TextFormField(
+        key: widget.fieldKey,
         controller: _controller,
         keyboardType: widget.keyboardType,
         minLines: widget.minLines,
@@ -476,7 +480,6 @@ class _SurveyMultiSelectField extends StatelessWidget {
     );
   }
 }
-
 
 class _SurveyLabeledControl extends StatelessWidget {
   const _SurveyLabeledControl({
@@ -711,6 +714,7 @@ class _IncomeEarnerRowEditor extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _SurveyTextField(
+              fieldKey: ValueKey('income_earner_income_$index'),
               value: _stringValue(row['income_php']),
               label: 'Income PHP',
               keyboardType: const TextInputType.numberWithOptions(
@@ -1043,7 +1047,8 @@ class SurveyContext extends InheritedWidget {
 
   @override
   bool updateShouldNotify(SurveyContext oldWidget) {
-    return surveyData != oldWidget.surveyData || onGlobalChanged != oldWidget.onGlobalChanged;
+    return surveyData != oldWidget.surveyData ||
+        onGlobalChanged != oldWidget.onGlobalChanged;
   }
 }
 
@@ -1065,7 +1070,7 @@ class _SurveyFamilyNameField extends StatefulWidget {
 class _SurveyFamilyNameFieldState extends State<_SurveyFamilyNameField> {
   FocusNode? _currentFocusNode;
   TextEditingController? _currentController;
-  
+
   @override
   void dispose() {
     _currentFocusNode?.removeListener(_onFocusChanged);
@@ -1097,7 +1102,8 @@ class _SurveyFamilyNameFieldState extends State<_SurveyFamilyNameField> {
 
     if (informant.toLowerCase() == text.toLowerCase()) return;
     for (final row in familyRows) {
-      if (_stringValue(row['name_of_family_member']).toLowerCase() == text.toLowerCase()) {
+      if (_stringValue(row['name_of_family_member']).toLowerCase() ==
+          text.toLowerCase()) {
         return;
       }
     }
@@ -1137,7 +1143,9 @@ class _SurveyFamilyNameFieldState extends State<_SurveyFamilyNameField> {
             return options;
           }
           return options.where((String option) {
-            return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+            return option.toLowerCase().contains(
+              textEditingValue.text.toLowerCase(),
+            );
           });
         },
         onSelected: (String selection) {
@@ -1189,17 +1197,22 @@ class _SurveySingleSelectCheckbox extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
         ),
-        ...options.map((option) => CheckboxListTile(
-          title: Text(option),
-          value: value == option,
-          onChanged: (checked) {
-            if (checked == true) {
-              onChanged(option);
-            }
-          },
-        )),
+        ...options.map(
+          (option) => CheckboxListTile(
+            title: Text(option),
+            value: value == option,
+            onChanged: (checked) {
+              if (checked == true) {
+                onChanged(option);
+              }
+            },
+          ),
+        ),
       ],
     );
   }
@@ -1225,21 +1238,26 @@ class _SurveyMultiSelectCheckbox extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
         ),
-        ...options.map((option) => CheckboxListTile(
-          title: Text(option),
-          value: values.contains(option),
-          onChanged: (checked) {
-            final nextValues = Set<String>.from(values);
-            if (checked == true) {
-              nextValues.add(option);
-            } else {
-              nextValues.remove(option);
-            }
-            onChanged(nextValues);
-          },
-        )),
+        ...options.map(
+          (option) => CheckboxListTile(
+            title: Text(option),
+            value: values.contains(option),
+            onChanged: (checked) {
+              final nextValues = Set<String>.from(values);
+              if (checked == true) {
+                nextValues.add(option);
+              } else {
+                nextValues.remove(option);
+              }
+              onChanged(nextValues);
+            },
+          ),
+        ),
       ],
     );
   }
@@ -1263,7 +1281,10 @@ class _SurveyYesNoCheckbox extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
         ),
         CheckboxListTile(
           title: const Text('Yes'),
@@ -1284,7 +1305,6 @@ class _SurveyYesNoCheckbox extends StatelessWidget {
   }
 }
 
-
 class _SurveyMealTimeGroup extends StatelessWidget {
   const _SurveyMealTimeGroup({
     required this.label,
@@ -1298,7 +1318,13 @@ class _SurveyMealTimeGroup extends StatelessWidget {
   final ValueChanged<List<Map<String, dynamic>>> onChanged;
   final String path;
 
-  Widget _buildMealRow(BuildContext context, String title, IconData icon, String value, ValueChanged<String> onChanged) {
+  Widget _buildMealRow(
+    BuildContext context,
+    String title,
+    IconData icon,
+    String value,
+    ValueChanged<String> onChanged,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
       child: Row(
@@ -1308,10 +1334,16 @@ class _SurveyMealTimeGroup extends StatelessWidget {
             margin: const EdgeInsets.only(top: 8),
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5),
+              color: Theme.of(
+                context,
+              ).colorScheme.primaryContainer.withOpacity(0.5),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+            child: Icon(
+              icon,
+              size: 20,
+              color: Theme.of(context).colorScheme.primary,
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -1330,7 +1362,9 @@ class _SurveyMealTimeGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final Map<String, String> mealMap = {};
     for (final row in rows) {
-      mealMap[_stringValue(row['time_of_day'])] = _stringValue(row['food_taken']);
+      mealMap[_stringValue(row['time_of_day'])] = _stringValue(
+        row['food_taken'],
+      );
     }
 
     void updateMeal(String time, String food) {
@@ -1359,17 +1393,53 @@ class _SurveyMealTimeGroup extends StatelessWidget {
           children: [
             Text(
               label,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
-            _buildMealRow(context, 'Breakfast', Icons.wb_twilight, mealMap['Breakfast'] ?? '', (v) => updateMeal('Breakfast', v)),
-            _buildMealRow(context, 'AM Snack', Icons.bakery_dining, mealMap['AM Snack'] ?? '', (v) => updateMeal('AM Snack', v)),
-            _buildMealRow(context, 'Lunch', Icons.wb_sunny, mealMap['Lunch'] ?? '', (v) => updateMeal('Lunch', v)),
-            _buildMealRow(context, 'PM Snack', Icons.local_cafe, mealMap['PM Snack'] ?? '', (v) => updateMeal('PM Snack', v)),
-            _buildMealRow(context, 'Dinner', Icons.nights_stay, mealMap['Dinner'] ?? '', (v) => updateMeal('Dinner', v)),
-            _buildMealRow(context, 'Midnight Snack', Icons.bedtime, mealMap['Midnight Snack'] ?? '', (v) => updateMeal('Midnight Snack', v)),
+            _buildMealRow(
+              context,
+              'Breakfast',
+              Icons.wb_twilight,
+              mealMap['Breakfast'] ?? '',
+              (v) => updateMeal('Breakfast', v),
+            ),
+            _buildMealRow(
+              context,
+              'AM Snack',
+              Icons.bakery_dining,
+              mealMap['AM Snack'] ?? '',
+              (v) => updateMeal('AM Snack', v),
+            ),
+            _buildMealRow(
+              context,
+              'Lunch',
+              Icons.wb_sunny,
+              mealMap['Lunch'] ?? '',
+              (v) => updateMeal('Lunch', v),
+            ),
+            _buildMealRow(
+              context,
+              'PM Snack',
+              Icons.local_cafe,
+              mealMap['PM Snack'] ?? '',
+              (v) => updateMeal('PM Snack', v),
+            ),
+            _buildMealRow(
+              context,
+              'Dinner',
+              Icons.nights_stay,
+              mealMap['Dinner'] ?? '',
+              (v) => updateMeal('Dinner', v),
+            ),
+            _buildMealRow(
+              context,
+              'Midnight Snack',
+              Icons.bedtime,
+              mealMap['Midnight Snack'] ?? '',
+              (v) => updateMeal('Midnight Snack', v),
+            ),
           ],
         ),
       ),
@@ -1428,7 +1498,7 @@ class _SurveyPriorityRankingGroup extends StatelessWidget {
 
   void _handleRankChange(String changingKey, String? newRank) {
     if (newRank == null) return;
-    
+
     String? conflictingKey;
     for (final field in _fields) {
       if (field.$1 != changingKey && _stringValue(data[field.$1]) == newRank) {
@@ -1464,9 +1534,9 @@ class _SurveyPriorityRankingGroup extends StatelessWidget {
           children: [
             Text(
               label,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             ..._fields.map((field) {
@@ -1476,7 +1546,11 @@ class _SurveyPriorityRankingGroup extends StatelessWidget {
                 child: DropdownButtonFormField<String>(
                   key: ValueKey(field.$1 + val),
                   initialValue: val.isEmpty ? null : val,
-                  decoration: _surveyInputDecoration(field.$2, useExternalLabel: true),
+                  isExpanded: true,
+                  decoration: _surveyInputDecoration(
+                    field.$2,
+                    useExternalLabel: true,
+                  ),
                   hint: const Text('Select rank 1-7'),
                   items: [
                     for (var i = 1; i <= 7; i++)

@@ -66,7 +66,8 @@ class AiGuidanceCard extends StatelessWidget {
               onPressed: () async {
                 final updated = await showDialog<AiHealthGuidance>(
                   context: context,
-                  builder: (ctx) => AiGuidanceEditorDialog(guidance: currentGuidance),
+                  builder: (ctx) =>
+                      AiGuidanceEditorDialog(guidance: currentGuidance),
                 );
                 if (updated != null) {
                   onEdit!(updated);
@@ -195,7 +196,12 @@ class _BulletSection extends StatelessWidget {
             children: [
               Icon(icon, size: 18, color: color),
               const SizedBox(width: 8),
-              Text(title, style: Theme.of(context).textTheme.labelLarge),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),

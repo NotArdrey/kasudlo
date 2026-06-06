@@ -18,6 +18,14 @@ const corsHeaders = {
 
 type AccountRole = "nurse" | "patient" | "admin";
 
+function canCreateRole(actorRole: unknown, targetRole: AccountRole) {
+  const role = normalizeText(actorRole).toLowerCase();
+  return (
+    role === "admin" ||
+    (targetRole === "patient" && (role === "nurse" || role === "worker"))
+  );
+}
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -85,7 +93,7 @@ serve(async (req: Request) => {
     const authorization = req.headers.get("Authorization") ?? "";
     const jwt = authorization.replace(/^Bearer\s+/i, "").trim();
     if (!jwt) {
-      return errorResponse("Sign in as an admin to continue.", 401);
+      return errorResponse("Sign in to continue.", 401);
     }
 
     const userClient = createClient(supabaseUrl, publishableKey, {
@@ -115,14 +123,15 @@ serve(async (req: Request) => {
       throw actorError;
     }
 
-    if (actorProfile?.role !== "admin") {
-      return errorResponse("Only admins can manage accounts.", 403);
-    }
-
     const body = await req.json().catch(() => ({}));
     const action = normalizeText(body.action);
+    const actorRole = normalizeText(actorProfile?.role).toLowerCase();
 
     if (action === "list") {
+      if (actorRole !== "admin") {
+        return errorResponse("Only admins can list accounts.", 403);
+      }
+
       const search = normalizeText(body.search).toLowerCase();
       const { data, error } = await adminClient
         .from("profiles")
@@ -154,6 +163,15 @@ serve(async (req: Request) => {
     const password = String(body.password ?? "");
     const role = parseRole(body.role);
 
+    if (!role) {
+      return errorResponse("Choose a valid account role.");
+    }
+    if (!canCreateRole(actorRole, role)) {
+      return errorResponse(
+        "Only admins can create staff accounts. Nurses can create patient accounts from collection.",
+        403,
+      );
+    }
     if (!fullName) {
       return errorResponse("Full name is required.");
     }
@@ -162,9 +180,6 @@ serve(async (req: Request) => {
     }
     if (password.length < 6) {
       return errorResponse("Use at least 6 password characters.");
-    }
-    if (!role) {
-      return errorResponse("Choose a valid account role.");
     }
 
     const { data: created, error: createError } =
@@ -218,12 +233,19 @@ serve(async (req: Request) => {
       .insert({
         actor_user_id: user.id,
         actor_email: user.email ?? "",
-        actor_role: "admin",
-        action: "admin.account.create",
+        actor_role: actorRole || "nurse",
+        action: actorRole === "admin"
+          ? "admin.account.create"
+          : "collection.patient_account.create",
         entity_type: "account",
         entity_id: targetUserId,
         summary: `Created ${role} account for ${email}.`,
-        metadata: { email, role, full_name: fullName },
+        metadata: {
+          email,
+          role,
+          full_name: fullName,
+          source: normalizeText(body.source),
+        },
       });
 
     return jsonResponse({

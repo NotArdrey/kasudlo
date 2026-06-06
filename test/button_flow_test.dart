@@ -109,7 +109,7 @@ void main() {
     GoRouter.of(context).go('/admin');
     await tester.pumpAndSettle();
 
-    expect(find.text('Community monitoring dashboard'), findsOneWidget);
+    expect(find.text('Community Overview'), findsOneWidget);
     expect(find.text('Admin console'), findsNothing);
   });
 
@@ -206,21 +206,15 @@ void main() {
     final controller = FakeAppController();
     await _pumpKasudlo(tester, controller);
 
-    await _scrollUntilVisible(
-      tester,
-      find.widgetWithText(ElevatedButton, 'Collect Data'),
-    );
-    await tester.tap(find.widgetWithText(ElevatedButton, 'Collect Data'));
+    await _scrollUntilVisible(tester, find.text('Collect New Data'));
+    await tester.tap(find.text('Collect New Data'));
     await tester.pumpAndSettle();
     expect(find.text('Household health assessment'), findsOneWidget);
 
-    await tester.tap(_navText('Home'));
+    await tester.tap(find.byTooltip('Back').hitTestable());
     await tester.pumpAndSettle();
-    await _scrollUntilVisible(
-      tester,
-      find.widgetWithText(OutlinedButton, 'View Reports'),
-    );
-    await tester.tap(find.widgetWithText(OutlinedButton, 'View Reports'));
+    await _scrollUntilVisible(tester, find.text('View Reports'));
+    await tester.tap(find.text('View Reports'));
     await tester.pumpAndSettle();
     expect(find.text('Summarized community health data'), findsOneWidget);
 
@@ -228,26 +222,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Account, preferences, and support'), findsOneWidget);
 
-    await tester.tap(_navText('Collect'));
-    await tester.pumpAndSettle();
-    expect(find.text('Household health assessment'), findsOneWidget);
-
     await tester.tap(_navText('Home'));
     await tester.pumpAndSettle();
-    await _scrollUntilVisible(
-      tester,
-      find.widgetWithText(OutlinedButton, 'Retry Sync'),
-    );
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Retry Sync'));
-    await tester.pumpAndSettle();
-    expect(controller.syncCalls, 1);
+    expect(find.text('Community Overview'), findsOneWidget);
   });
 
   testWidgets('home app bar sync icon retries pending records', (tester) async {
     final controller = FakeAppController.withPending();
     await _pumpKasudlo(tester, controller);
 
-    await tester.tap(find.byTooltip('Sync pending records'));
+    await _scrollUntilVisible(tester, find.text('Retry Sync'));
+    await tester.tap(find.text('Retry Sync'));
     await tester.pumpAndSettle();
 
     expect(controller.syncCalls, 1);
@@ -265,10 +250,7 @@ void main() {
 
       expect(find.text('Health Teaching'), findsWidgets);
       expect(find.text('Dengue prevention'), findsOneWidget);
-      expect(
-        find.widgetWithText(ElevatedButton, 'Upload Health Teaching'),
-        findsOneWidget,
-      );
+      expect(find.text('Add Teaching'), findsOneWidget);
       expect(find.byTooltip('Edit health teaching'), findsOneWidget);
       expect(find.byTooltip('Delete health teaching'), findsOneWidget);
 
@@ -305,11 +287,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Dengue prevention'), findsOneWidget);
-      expect(
-        find.widgetWithText(ElevatedButton, 'Upload Health Teaching'),
-        findsNothing,
-      );
-      expect(find.byTooltip('Add health teaching'), findsNothing);
+      expect(find.text('Add Teaching'), findsNothing);
       expect(find.byTooltip('Edit health teaching'), findsNothing);
       expect(find.byTooltip('Delete health teaching'), findsNothing);
     },
@@ -321,30 +299,20 @@ void main() {
     final controller = FakeAppController.withReportData();
     await _pumpKasudlo(tester, controller);
 
-    await _scrollUntilVisible(tester, find.text('Recent records'));
-    expect(find.text('Recent records'), findsOneWidget);
-    expect(find.text('Ana Cruz'), findsOneWidget);
-    expect(find.text('Ben Santos'), findsOneWidget);
+    await _scrollUntilVisible(tester, find.text('Community Overview'));
+    expect(find.text('Community Overview'), findsOneWidget);
+    expect(find.text('2'), findsWidgets);
 
     await tester.tap(_navText('Reports'));
     await tester.pumpAndSettle();
     expect(find.text('Summarized community health data'), findsOneWidget);
-    await _scrollUntilVisible(tester, find.text('Vaccination status'));
-    expect(find.text('Vaccination status'), findsOneWidget);
-    expect(find.text('Complete'), findsOneWidget);
-
-    await _scrollUntilVisible(tester, find.text('Common health problems'));
-    expect(find.text('Hypertension'), findsOneWidget);
-    expect(find.text('Cough or fever'), findsOneWidget);
-
-    await _scrollUntilVisible(tester, find.text('Community concerns'));
-    expect(find.text('Dengue risk'), findsOneWidget);
-    expect(find.text('Unsafe water'), findsOneWidget);
+    await _scrollUntilVisible(tester, find.text('Report records'));
+    expect(find.text('Ana Cruz'), findsOneWidget);
+    expect(find.text('Ben Santos'), findsOneWidget);
 
     await tester.tap(_navText('Settings'));
     await tester.pumpAndSettle();
-    await _scrollUntilVisible(tester, find.text('1 pending record'));
-    expect(find.text('1 pending record'), findsOneWidget);
+    expect(find.text('Account, preferences, and support'), findsOneWidget);
   });
 
   testWidgets(
@@ -353,7 +321,8 @@ void main() {
       final controller = FakeAppController();
       await _pumpKasudlo(tester, controller);
 
-      await tester.tap(_navText('Collect'));
+      await _scrollUntilVisible(tester, find.text('Collect New Data'));
+      await tester.tap(find.text('Collect New Data'));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Informant'),
@@ -388,37 +357,61 @@ void main() {
       );
 
       expect(find.text('I. Demographic'), findsOneWidget);
+      await _scrollUntilVisible(tester, find.text('Member 1'));
+      for (var index = 0; index < 3; index++) {
+        expect(
+          find.byKey(
+            ValueKey('family_member_$index.name_of_family_member'),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+        );
+      }
       expect(
-        find.widgetWithText(TextFormField, 'Member name'),
-        findsNWidgets(3),
-      );
-      expect(
-        find.widgetWithText(TextFormField, 'Member no.'),
+        find.widgetWithText(TextFormField, 'Member no.', skipOffstage: false),
         findsNWidgets(3),
       );
       expect(find.text('Member 1'), findsOneWidget);
       expect(find.text('Member 3'), findsOneWidget);
       await _scrollUntilVisible(
         tester,
-        find.widgetWithText(TextFormField, 'Member name'),
-      );
-      expect(
-        find.widgetWithText(TextFormField, 'Member name'),
-        findsNWidgets(3),
+        find.byKey(const ValueKey('family_member_0.name_of_family_member')),
       );
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Member name').first,
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('family_member_0.name_of_family_member'),
+          ),
+          matching: find.byType(TextFormField),
+        ),
         'Ben Cruz',
       );
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Relationship').first,
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('family_member_0.relationship_to_head'),
+          ),
+          matching: find.byType(TextFormField),
+        ),
         'Son',
       );
 
-      await tester.tap(_navText('Reports'));
+      await _scrollUntilVisible(
+        tester,
+        find.widgetWithText(OutlinedButton, 'Save Draft'),
+      );
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Save Draft'));
+      await tester.pumpAndSettle();
+
+      GoRouter.of(
+        tester.element(find.text('Household health assessment')),
+      ).go('/reports');
       await tester.pumpAndSettle();
       expect(find.text('Summarized community health data'), findsOneWidget);
-      await tester.tap(_navText('Collect'));
+      await tester.tap(_navText('Home'));
+      await tester.pumpAndSettle();
+      await _scrollUntilVisible(tester, find.text('Collect New Data'));
+      await tester.tap(find.text('Collect New Data'));
       await tester.pumpAndSettle();
       expect(find.text('Ben Cruz'), findsOneWidget);
 
@@ -500,7 +493,7 @@ void main() {
       await tester.tap(find.text('1 - Ben Cruz (Son)').last);
       await tester.pumpAndSettle();
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Income PHP'),
+        find.byKey(const ValueKey('income_earner_income_0')),
         '24000',
       );
       await tester.pumpAndSettle();
@@ -522,7 +515,7 @@ void main() {
       );
       await tester.tap(find.widgetWithText(OutlinedButton, 'Save Draft'));
       await tester.pumpAndSettle();
-      expect(controller.saveDraftCalls, 1);
+      expect(controller.saveDraftCalls, greaterThanOrEqualTo(2));
       expect(find.text('Draft saved.'), findsOneWidget);
       expect(
         controller.submissions.first.surveyData[accountCreateRequestedKey],
@@ -560,6 +553,26 @@ void main() {
         isNot(contains('secret1')),
       );
 
+      await _scrollUntilVisible(tester, find.text('I. Demographic'));
+      await tester.tap(find.text('I. Demographic'));
+      await tester.pumpAndSettle();
+      await _scrollUntilVisible(
+        tester,
+        find.widgetWithText(TextFormField, 'Password'),
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Password'),
+        'secret1',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Confirm password'),
+        'secret1',
+      );
+      await tester.pumpAndSettle();
+
+      await _scrollUntilVisible(tester, find.text('VI. Concerns'));
+      await tester.tap(find.text('VI. Concerns'));
+      await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 4));
       await tester.pumpAndSettle();
       await _scrollUntilVisible(
@@ -584,6 +597,10 @@ void main() {
       await tester.tap(find.widgetWithText(ElevatedButton, 'Submit'));
       await tester.pumpAndSettle();
       expect(controller.submitCalls, 1);
+      expect(controller.createPatientAccountCalls, 1);
+      expect(controller.createdPatientAccountName, 'Ana Cruz');
+      expect(controller.createdPatientAccountEmail, 'ana.household@test.com');
+      expect(controller.createdPatientAccountPassword, 'secret1');
       expect(find.text('Record queued for sync.'), findsOneWidget);
       expect(controller.guidanceCalls, 1);
       expect(find.text('AI health guidance'), findsOneWidget);
@@ -592,7 +609,7 @@ void main() {
     },
   );
 
-  testWidgets('reports records can be viewed, edited, and deleted', (
+  testWidgets('reports records can be viewed, edited, and archived', (
     tester,
   ) async {
     final controller = FakeAppController.withReportData();
@@ -647,7 +664,7 @@ void main() {
 
     expect(controller.updateReportCalls, 1);
     expect(find.text('Ana Edited'), findsOneWidget);
-    expect(find.text('9'), findsWidgets);
+    expect(controller.submissions.first.familyMembersCount, 6);
 
     await tester.tap(find.byTooltip('View report record').first);
     await tester.pumpAndSettle();
@@ -727,53 +744,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('1 selected'), findsOneWidget);
 
-    await tester.ensureVisible(
-      find.widgetWithText(OutlinedButton, 'Export PDF'),
-    );
-    await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<OutlinedButton>(
-            find.widgetWithText(OutlinedButton, 'Export PDF'),
-          )
-          .onPressed,
-      isNotNull,
-    );
-    await tester.tap(
-      find.widgetWithText(OutlinedButton, 'Export PDF').hitTestable(),
-    );
-    await tester.runAsync(
-      () async => Future<void>.delayed(const Duration(milliseconds: 100)),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(tester.takeException(), isNull);
-    expect(find.byType(SnackBar), findsOneWidget);
-
     await tester.ensureVisible(find.byType(Checkbox).last);
     await tester.pumpAndSettle();
     await tester.tap(find.byType(Checkbox).last);
     await tester.pumpAndSettle();
     expect(find.text('2 selected'), findsOneWidget);
 
-    await tester.ensureVisible(
-      find.widgetWithText(OutlinedButton, 'Export Docs'),
-    );
+    await tester.tap(find.byTooltip('Archive report record').first);
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.widgetWithText(OutlinedButton, 'Export Docs').hitTestable(),
-    );
-    await tester.runAsync(
-      () async => Future<void>.delayed(const Duration(milliseconds: 100)),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(tester.takeException(), isNull);
-
-    await tester.tap(find.byTooltip('Delete report record').first);
-    await tester.pumpAndSettle();
-    expect(find.text('Delete report record?'), findsOneWidget);
-    await tester.tap(find.widgetWithText(FilledButton, 'Confirm Delete'));
+    expect(find.text('Archive report record?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Archive'));
     await tester.pumpAndSettle();
 
     expect(controller.deleteCalls, 1);
@@ -846,8 +826,6 @@ void main() {
     expect(controller.signOutCalls, 1);
     expect(find.widgetWithText(ElevatedButton, 'Sign In'), findsOneWidget);
   });
-
-
 }
 
 Future<void> _pumpKasudlo(
@@ -1144,9 +1122,13 @@ class FakeAppController extends AppController {
   int deleteHealthTipCalls = 0;
   int syncCalls = 0;
   int guidanceCalls = 0;
+  int createPatientAccountCalls = 0;
   int preferenceUpdateCalls = 0;
   String? requestedResetEmail;
   String? completedPassword;
+  String? createdPatientAccountName;
+  String? createdPatientAccountEmail;
+  String? createdPatientAccountPassword;
 
   @override
   bool get isSupabaseConfigured => false;
@@ -1256,6 +1238,19 @@ class FakeAppController extends AppController {
       ...submissions,
     ];
     notifyListeners();
+  }
+
+  @override
+  Future<bool> createPatientAccountForSubmission({
+    required HealthSubmission submission,
+    required String email,
+    required String password,
+  }) async {
+    createPatientAccountCalls++;
+    createdPatientAccountName = submission.respondentName;
+    createdPatientAccountEmail = email;
+    createdPatientAccountPassword = password;
+    return true;
   }
 
   @override

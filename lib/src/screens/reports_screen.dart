@@ -45,7 +45,7 @@ class ReportsScreen extends ConsumerWidget {
             submissions: controller.activeSubmissions,
             onView: (submission) => _showViewSheet(context, submission),
             onEdit: (submission) => _showEditSheet(context, ref, submission),
-            onDelete: (submission) => _confirmDelete(context, ref, submission),
+            onDelete: (submission) => _confirmArchive(context, ref, submission),
           ),
         ],
       ],
@@ -89,7 +89,7 @@ class ReportsScreen extends ConsumerWidget {
     ).showSnackBar(const SnackBar(content: Text('Report record updated.')));
   }
 
-  Future<void> _confirmDelete(
+  Future<void> _confirmArchive(
     BuildContext context,
     WidgetRef ref,
     HealthSubmission submission,
@@ -97,8 +97,10 @@ class ReportsScreen extends ConsumerWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete report record?'),
-        content: Text('Remove ${submission.respondentName} from reports?'),
+        title: const Text('Archive report record?'),
+        content: Text(
+          'Move ${_reportTitle(submission)} out of reports? Admins can still view it in the archive.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -106,8 +108,8 @@ class ReportsScreen extends ConsumerWidget {
           ),
           FilledButton.icon(
             onPressed: () => Navigator.of(context).pop(true),
-            icon: const Icon(Icons.delete_outline),
-            label: const Text('Confirm Delete'),
+            icon: const Icon(Icons.archive_outlined),
+            label: const Text('Archive'),
           ),
         ],
       ),
@@ -125,7 +127,7 @@ class ReportsScreen extends ConsumerWidget {
     }
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Report record deleted.')));
+    ).showSnackBar(const SnackBar(content: Text('Report record archived.')));
   }
 }
 
@@ -256,16 +258,22 @@ class _ReportRecordsCardState extends ConsumerState<_ReportRecordsCard> {
                 label: const Text('Select shown'),
               ),
               TextButton.icon(
-                onPressed: selectedCount == 0 || _isAnalyzingWithAi ? null : _clearSelection,
+                onPressed: selectedCount == 0 || _isAnalyzingWithAi
+                    ? null
+                    : _clearSelection,
                 icon: const Icon(Icons.clear_outlined),
                 label: const Text('Clear'),
               ),
               OutlinedButton.icon(
-                onPressed: selectedCount == 0 || isExporting || _isAnalyzingWithAi
+                onPressed:
+                    selectedCount == 0 || isExporting || _isAnalyzingWithAi
                     ? null
                     : () => _analyzeSelectedWithAi(),
-                icon: _isAnalyzingWithAi 
-                    ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2.2)) 
+                icon: _isAnalyzingWithAi
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2.2),
+                      )
                     : const Icon(Icons.psychology_outlined),
                 label: const Text('Analyze with AI'),
               ),
@@ -284,7 +292,7 @@ class _ReportRecordsCardState extends ConsumerState<_ReportRecordsCard> {
                 : Padding(
                     key: ValueKey(_exportingFormat ?? _isAnalyzingWithAi),
                     padding: const EdgeInsets.only(top: 12),
-                    child: _exportingFormat != null 
+                    child: _exportingFormat != null
                         ? _ExportProgressStatus(format: _exportingFormat!)
                         : const _AiProgressStatus(),
                   ),
@@ -426,7 +434,9 @@ class _ReportRecordsCardState extends ConsumerState<_ReportRecordsCard> {
 
     if (selectedSubmissions.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Select at least one report record to analyze.')),
+        const SnackBar(
+          content: Text('Select at least one report record to analyze.'),
+        ),
       );
       return;
     }
@@ -435,13 +445,15 @@ class _ReportRecordsCardState extends ConsumerState<_ReportRecordsCard> {
 
     var successCount = 0;
     var failureCount = 0;
-    
+
     try {
       final controller = ref.read(appControllerProvider);
-      
+
       for (final submission in selectedSubmissions) {
         if (!mounted) break;
-        final guidance = await controller.analyzeAndSaveSubmissionGuidance(submission);
+        final guidance = await controller.analyzeAndSaveSubmissionGuidance(
+          submission,
+        );
         if (guidance != null) {
           successCount++;
         } else {
@@ -450,15 +462,17 @@ class _ReportRecordsCardState extends ConsumerState<_ReportRecordsCard> {
       }
 
       if (!mounted) return;
-      
+
       final label = successCount == 1 ? 'record' : 'records';
       final failureText = failureCount > 0 ? '\n$failureCount failed.' : '';
-      
+
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Analysis Complete'),
-          content: Text('Successfully analyzed $successCount $label with AI.$failureText'),
+          content: Text(
+            'Successfully analyzed $successCount $label with AI.$failureText',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -605,7 +619,7 @@ class _ReportRecordTile extends StatelessWidget {
         value: selected,
         onChanged: (value) => onSelectedChanged(value ?? false),
       ),
-      title: Text(submission.respondentName, overflow: TextOverflow.ellipsis),
+      title: Text(_reportTitle(submission), overflow: TextOverflow.ellipsis),
       subtitle: Text(
         '${formatter.format(submission.createdAt)} - ${submission.familyMembersCount} members',
         overflow: TextOverflow.ellipsis,
@@ -626,9 +640,9 @@ class _ReportRecordTile extends StatelessWidget {
               icon: const Icon(Icons.edit_outlined),
             ),
             IconButton(
-              tooltip: 'Delete report record',
+              tooltip: 'Archive report record',
               onPressed: onDelete,
-              icon: const Icon(Icons.delete_outline),
+              icon: const Icon(Icons.archive_outlined),
             ),
           ],
         ),
@@ -686,7 +700,9 @@ class _ViewReportSheetState extends ConsumerState<_ViewReportSheet> {
         (s) => s.clientSubmissionId == widget.submission.clientSubmissionId,
         orElse: () => widget.submission,
       );
-      final guidance = await controller.analyzeAndSaveSubmissionGuidance(currentSubmission);
+      final guidance = await controller.analyzeAndSaveSubmissionGuidance(
+        currentSubmission,
+      );
       if (!mounted) return;
       if (guidance != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -722,9 +738,11 @@ class _ViewReportSheetState extends ConsumerState<_ViewReportSheet> {
       isAnalyzingAi: _isAnalyzing,
       onAnalyzeAi: _analyzeWithAi,
       onEditAiFindings: (updated) {
-        ref.read(appControllerProvider).updateReportSubmission(
-          currentSubmission.copyWith(aiGuidance: updated),
-        );
+        ref
+            .read(appControllerProvider)
+            .updateReportSubmission(
+              currentSubmission.copyWith(aiGuidance: updated),
+            );
       },
     );
 
@@ -791,11 +809,13 @@ List<Widget> _reportDetailGroups(
 
   final aiGuidance = submission.aiGuidance;
   if (aiGuidance != null) {
-    groups.add(AiGuidanceCard(
-      guidance: aiGuidance,
-      isLoading: false,
-      onEdit: onEditAiFindings,
-    ));
+    groups.add(
+      AiGuidanceCard(
+        guidance: aiGuidance,
+        isLoading: false,
+        onEdit: onEditAiFindings,
+      ),
+    );
   } else if (onAnalyzeAi != null) {
     groups.add(
       _ReportDetailGroup(
@@ -805,10 +825,15 @@ List<Widget> _reportDetailGroups(
             alignment: Alignment.centerLeft,
             child: FilledButton.icon(
               onPressed: isAnalyzingAi ? null : onAnalyzeAi,
-              icon: isAnalyzingAi 
-                  ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
+              icon: isAnalyzingAi
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.psychology_outlined),
-              label: Text(isAnalyzingAi ? 'Analyzing...' : 'Generate AI Guidance'),
+              label: Text(
+                isAnalyzingAi ? 'Analyzing...' : 'Generate AI Guidance',
+              ),
             ),
           ),
         ],
@@ -1138,6 +1163,18 @@ bool _matchesReportSearch({
 
 String _formatReportDateTime(DateTime value) {
   return DateFormat('MMM d, yyyy h:mm a').format(value.toLocal());
+}
+
+String _reportTitle(HealthSubmission submission) {
+  final name = submission.respondentName.trim();
+  if (name.isNotEmpty) {
+    return name;
+  }
+  final address = submission.address.trim();
+  if (address.isNotEmpty) {
+    return address;
+  }
+  return 'Unnamed record';
 }
 
 String _displayValue(String value) {

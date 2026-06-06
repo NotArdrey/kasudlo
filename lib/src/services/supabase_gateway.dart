@@ -176,9 +176,30 @@ class SupabaseGateway {
       'role': role.name,
     });
 
+    return _adminUserFromResponse(response);
+  }
+
+  static Future<AdminUser> createPatientUser({
+    required String fullName,
+    required String email,
+    required String password,
+  }) async {
+    final response = await _invokeAdminUsers({
+      'action': 'create',
+      'full_name': fullName.trim(),
+      'email': email.trim(),
+      'password': password,
+      'role': AccountRole.patient.name,
+      'source': 'collection',
+    });
+
+    return _adminUserFromResponse(response);
+  }
+
+  static AdminUser _adminUserFromResponse(Map<String, dynamic> response) {
     final user = response['user'];
     if (user is! Map) {
-      throw StateError('Admin account creation returned no user.');
+      throw StateError('Account creation returned no user.');
     }
 
     return AdminUser.fromJson(Map<String, dynamic>.from(user));
@@ -311,6 +332,32 @@ class SupabaseGateway {
               HealthSubmission.fromRemoteJson(Map<String, dynamic>.from(item)),
         )
         .toList();
+  }
+
+  static Future<void> restoreAssessment(String clientSubmissionId) async {
+    final supabase = client;
+    if (supabase == null) {
+      throw StateError('Supabase is not configured.');
+    }
+
+    await supabase
+        .from('household_assessments')
+        .update({'is_deleted': false, 'deleted_at': null, 'deleted_by': null})
+        .eq('client_submission_id', clientSubmissionId)
+        .eq('is_deleted', true);
+  }
+
+  static Future<void> hardDeleteAssessment(String clientSubmissionId) async {
+    final supabase = client;
+    if (supabase == null) {
+      throw StateError('Supabase is not configured.');
+    }
+
+    await supabase
+        .from('household_assessments')
+        .delete()
+        .eq('client_submission_id', clientSubmissionId)
+        .eq('is_deleted', true);
   }
 
   static Future<HealthSubmission?> fetchAssessment(

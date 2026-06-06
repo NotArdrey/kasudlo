@@ -20,6 +20,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _searchController = TextEditingController();
+  final _archiveSearchController = TextEditingController();
   final _auditSearchController = TextEditingController();
   AccountRole _selectedRole = AccountRole.nurse;
   bool _obscurePassword = true;
@@ -28,6 +29,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   void initState() {
     super.initState();
     _searchController.addListener(() => setState(() {}));
+    _archiveSearchController.addListener(() => setState(() {}));
     _auditSearchController.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -44,6 +46,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _searchController.dispose();
+    _archiveSearchController.dispose();
     _auditSearchController.dispose();
     super.dispose();
   }
@@ -52,6 +55,9 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
   Widget build(BuildContext context) {
     final controller = ref.watch(appControllerProvider);
     final visibleUsers = _filteredUsers(controller.adminUsers);
+    final visibleArchivedSubmissions = _filteredArchivedSubmissions(
+      controller.archivedSubmissions,
+    );
     final visibleAuditLogs = _filteredAuditLogs(controller.auditLogs);
     final adminCount = controller.adminUsers
         .where((user) => user.role == AccountRole.admin)
@@ -107,6 +113,14 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
           users: visibleUsers,
           loading: controller.isAdminLoading,
         ),
+        _ArchivedReportsCard(
+          searchController: _archiveSearchController,
+          submissions: visibleArchivedSubmissions,
+          loading: controller.isAdminActionBusy,
+          errorMessage: controller.adminErrorMessage,
+          onRestore: (submission) => _confirmRestoreArchived(submission),
+          onHardDelete: (submission) => _confirmHardDeleteArchived(submission),
+        ),
         _AuditLogCard(
           searchController: _auditSearchController,
           logs: visibleAuditLogs,
@@ -155,6 +169,26 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     }).toList();
   }
 
+  List<HealthSubmission> _filteredArchivedSubmissions(
+    List<HealthSubmission> submissions,
+  ) {
+    final query = _archiveSearchController.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return submissions;
+    }
+
+    return submissions.where((submission) {
+      return [
+        _submissionTitle(submission),
+        submission.address,
+        submission.deletedBy ?? '',
+        submission.notes,
+        ...submission.healthProblems,
+        ...submission.communityConcerns,
+      ].any((value) => value.toLowerCase().contains(query));
+    }).toList();
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -184,6 +218,254 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('Account created.')));
+  }
+
+  Future<void> _confirmRestoreArchived(HealthSubmission submission) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Restore archived record?'),
+        content: Text('Return ${_submissionTitle(submission)} to reports?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.restore_outlined),
+            label: const Text('Restore'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    await ref
+        .read(appControllerProvider)
+        .restoreArchivedSubmission(submission.clientSubmissionId);
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Record restored.')));
+  }
+
+  Future<void> _confirmHardDeleteArchived(HealthSubmission submission) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Permanently delete record?'),
+        content: Text(
+          'This will permanently remove ${_submissionTitle(submission)} from the archive.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.delete_forever_outlined),
+            label: const Text('Delete Forever'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    await ref
+        .read(appControllerProvider)
+        .hardDeleteSubmission(submission.clientSubmissionId);
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Record permanently deleted.')),
+    );
+  }
+}
+
+class _ArchivedReportsCard extends StatelessWidget {
+  const _ArchivedReportsCard({
+    required this.searchController,
+    required this.submissions,
+    required this.loading,
+    required this.onRestore,
+    required this.onHardDelete,
+    this.errorMessage,
+  });
+
+  final TextEditingController searchController;
+  final List<HealthSubmission> submissions;
+  final bool loading;
+  final ValueChanged<HealthSubmission> onRestore;
+  final ValueChanged<HealthSubmission> onHardDelete;
+  final String? errorMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    final listMaxHeight = (MediaQuery.sizeOf(context).height * 0.45)
+        .clamp(280.0, 520.0)
+        .toDouble();
+    final shouldConstrainList = submissions.length > 4;
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Archived reports',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              StatusBadge(
+                label: '${submissions.length}',
+                color: KasudloColors.warning,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: searchController,
+            textInputAction: TextInputAction.search,
+            decoration: const InputDecoration(
+              labelText: 'Search archive',
+              prefixIcon: Icon(Icons.search),
+            ),
+          ),
+          if (errorMessage != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              errorMessage!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: KasudloColors.critical),
+            ),
+          ],
+          const SizedBox(height: 12),
+          if (loading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(18),
+                child: CircularProgressIndicator(),
+              ),
+            )
+          else if (submissions.isEmpty)
+            const _ArchivedReportsEmptyState()
+          else
+            SizedBox(
+              height: shouldConstrainList ? listMaxHeight : null,
+              child: ListView.separated(
+                shrinkWrap: !shouldConstrainList,
+                physics: shouldConstrainList
+                    ? const ClampingScrollPhysics()
+                    : const NeverScrollableScrollPhysics(),
+                itemCount: submissions.length,
+                separatorBuilder: (context, index) => const Divider(height: 1),
+                itemBuilder: (context, index) => _ArchivedReportTile(
+                  submission: submissions[index],
+                  onRestore: () => onRestore(submissions[index]),
+                  onHardDelete: () => onHardDelete(submissions[index]),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ArchivedReportTile extends StatelessWidget {
+  const _ArchivedReportTile({
+    required this.submission,
+    required this.onRestore,
+    required this.onHardDelete,
+  });
+
+  final HealthSubmission submission;
+  final VoidCallback onRestore;
+  final VoidCallback onHardDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(
+        backgroundColor: KasudloColors.warning.withValues(alpha: 0.12),
+        foregroundColor: KasudloColors.warning,
+        child: const Icon(Icons.archive_outlined),
+      ),
+      title: Text(
+        _submissionTitle(submission),
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        _archiveSubtitle(submission),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: SizedBox(
+        width: 96,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            IconButton(
+              tooltip: 'Restore archived record',
+              onPressed: onRestore,
+              icon: const Icon(Icons.restore_outlined),
+            ),
+            IconButton(
+              tooltip: 'Permanently delete record',
+              onPressed: onHardDelete,
+              icon: const Icon(Icons.delete_forever_outlined),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ArchivedReportsEmptyState extends StatelessWidget {
+  const _ArchivedReportsEmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      child: Column(
+        children: [
+          const Icon(
+            Icons.archive_outlined,
+            color: KasudloColors.primary,
+            size: 36,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'No archived reports',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Soft-deleted report records will stay here until an admin permanently deletes them.',
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: KasudloColors.muted),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -326,6 +608,28 @@ Color _auditRoleColor(String role) => switch (role) {
   'patient' => KasudloColors.warning,
   _ => KasudloColors.primary,
 };
+
+String _submissionTitle(HealthSubmission submission) {
+  final name = submission.respondentName.trim();
+  if (name.isNotEmpty) {
+    return name;
+  }
+  final address = submission.address.trim();
+  if (address.isNotEmpty) {
+    return address;
+  }
+  return 'Unnamed record';
+}
+
+String _archiveSubtitle(HealthSubmission submission) {
+  final archivedAt = submission.deletedAt;
+  final archivedText = archivedAt == null
+      ? 'Archived'
+      : 'Archived ${DateFormat('MMM d, yyyy h:mm a').format(archivedAt.toLocal())}';
+  final actor = (submission.deletedBy ?? '').trim();
+  final actorText = actor.isEmpty ? '' : ' by $actor';
+  return '$archivedText$actorText - ${submission.address}';
+}
 
 class _AuditEmptyState extends StatelessWidget {
   const _AuditEmptyState();

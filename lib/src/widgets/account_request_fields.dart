@@ -46,7 +46,9 @@ class AccountRequestFields extends StatelessWidget {
               if (email.isEmpty) {
                 return 'Enter an email';
               }
-              return _emailLooksValid(email) ? null : 'Enter a valid email';
+              return accountEmailLooksValid(email)
+                  ? null
+                  : 'Enter a valid email';
             },
           ),
           const SizedBox(height: 12),
@@ -116,5 +118,5 @@ bool accountCreateRequestedFromData(Map<String, dynamic> data) {
 String accountEmailFromData(Map<String, dynamic> data) =>
     '${data[accountEmailKey] ?? ''}'.trim();
 
-bool _emailLooksValid(String value) =>
+bool accountEmailLooksValid(String value) =>
     RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value);

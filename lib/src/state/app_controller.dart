@@ -76,9 +76,24 @@ class AppController extends ChangeNotifier {
             submission.syncStatus == SyncStatus.pendingDelete,
       )
       .length;
-  
-  List<HealthSubmission> get activeSubmissions => 
+
+  List<HealthSubmission> get activeSubmissions =>
       submissions.where((s) => !s.isDeleted).toList();
+  List<HealthSubmission> get draftSubmissions =>
+      submissions
+          .where(
+            (submission) =>
+                !submission.isDeleted &&
+                submission.syncStatus == SyncStatus.draft,
+          )
+          .toList()
+        ..sort((a, b) => b.effectiveUpdatedAt.compareTo(a.effectiveUpdatedAt));
+  List<HealthSubmission> get archivedSubmissions =>
+      submissions.where((submission) => submission.isDeleted).toList()..sort(
+        (a, b) => (b.deletedAt ?? b.effectiveUpdatedAt).compareTo(
+          a.deletedAt ?? a.effectiveUpdatedAt,
+        ),
+      );
 
   ReportSummary get summary => ReportSummary.fromSubmissions(activeSubmissions);
 
@@ -106,15 +121,16 @@ class AppController extends ChangeNotifier {
     activeRole = AccountRole.nurse;
     if (user != null && isSupabaseConfigured && !isPasswordRecoverySession) {
       await _loadActiveProfile(fallbackEmail: user.email);
-      await _refreshRemoteSubmissions();
       await _refreshRemoteHealthTips();
-      await syncPending();
+      if (activeRole == AccountRole.patient) {
+        await loadPatientFindings();
+      } else {
+        await _refreshRemoteSubmissions();
+        await syncPending();
+      }
     }
     isReady = true;
     _startConnectivitySyncWatcher();
-    if (activeRole == AccountRole.patient) {
-      await loadPatientFindings();
-    }
     notifyListeners();
   }
 
@@ -129,15 +145,17 @@ class AppController extends ChangeNotifier {
           await _loadActiveProfile(
             fallbackEmail: SupabaseGateway.currentUser?.email ?? email,
           );
-          
+
           if (activeEmail != null) {
-            await LocalStore.cacheOfflineUser(OfflineUserCache(
-              id: SupabaseGateway.currentUser?.id ?? _uuid.v4(),
-              email: activeEmail!,
-              role: activeRole,
-              credentialHash: _hashCredential(activeEmail!, password),
-              lastLoginAt: DateTime.now().toUtc(),
-            ));
+            await LocalStore.cacheOfflineUser(
+              OfflineUserCache(
+                id: SupabaseGateway.currentUser?.id ?? _uuid.v4(),
+                email: activeEmail!,
+                role: activeRole,
+                credentialHash: _hashCredential(activeEmail!, password),
+                lastLoginAt: DateTime.now().toUtc(),
+              ),
+            );
           }
 
           isSignedIn = true;
@@ -146,9 +164,13 @@ class AppController extends ChangeNotifier {
             entityType: 'session',
             summary: 'Signed in to KASUDLO.',
           );
-          await _refreshRemoteSubmissions();
           await _refreshRemoteHealthTips();
-          await syncPending();
+          if (activeRole == AccountRole.patient) {
+            await loadPatientFindings();
+          } else {
+            await _refreshRemoteSubmissions();
+            await syncPending();
+          }
           return;
         } catch (e) {
           final errorStr = e.toString().toLowerCase();
@@ -167,28 +189,38 @@ class AppController extends ChangeNotifier {
       if (useLocal) {
         final normalizedEmail = email.trim();
         final offlineUser = LocalStore.getOfflineUser(normalizedEmail);
-        
+
         if (offlineUser == null) {
-          if (normalizedEmail.isEmpty || normalizedEmail == 'local-demo@kasudlo.app') {
+          if (normalizedEmail.isEmpty ||
+              normalizedEmail == 'local-demo@kasudlo.app') {
             throw StateError('Invalid email or password.');
           }
-          throw StateError('Offline login is only allowed for users who have previously logged in online on this device.');
+          throw StateError(
+            'Offline login is only allowed for users who have previously logged in online on this device.',
+          );
         }
-        
+
         final expectedHash = _hashCredential(normalizedEmail, password);
         if (offlineUser.credentialHash != expectedHash) {
           throw StateError('Invalid email or password.');
         }
-        
-        final thirtyDaysAgo = DateTime.now().toUtc().subtract(const Duration(days: 30));
+
+        final thirtyDaysAgo = DateTime.now().toUtc().subtract(
+          const Duration(days: 30),
+        );
         if (offlineUser.lastLoginAt.isBefore(thirtyDaysAgo)) {
-          throw StateError('Offline session expired. Please connect to the internet to log in again.');
+          throw StateError(
+            'Offline session expired. Please connect to the internet to log in again.',
+          );
         }
 
         activeEmail = offlineUser.email;
         activeRole = offlineUser.role;
         isSignedIn = true;
         await _seedLocalHealthTipsIfNeeded();
+        if (activeRole == AccountRole.patient) {
+          patientFindings = const [];
+        }
         await _logAuditEvent(
           action: 'auth.sign_in',
           entityType: 'session',
@@ -215,6 +247,8 @@ class AppController extends ChangeNotifier {
       healthTipsErrorMessage = null;
       adminUsers = const [];
       auditLogs = const [];
+      patientFindings = const [];
+      isPatientFindingsLoading = false;
     });
   }
 
@@ -437,6 +471,63 @@ class AppController extends ChangeNotifier {
     } finally {
       isAdminActionBusy = false;
       notifyListeners();
+    }
+  }
+
+  Future<bool> createPatientAccountForSubmission({
+    required HealthSubmission submission,
+    required String email,
+    required String password,
+  }) async {
+    final normalizedEmail = email.trim();
+    if (normalizedEmail.isEmpty) {
+      return true;
+    }
+    if (password.length < 6) {
+      errorMessage = 'Use at least 6 password characters.';
+      notifyListeners();
+      return false;
+    }
+
+    errorMessage = null;
+    notifyListeners();
+    try {
+      if (isSupabaseConfigured) {
+        if (!isSignedIn || SupabaseGateway.currentUser == null) {
+          throw StateError('Sign in before creating a patient account.');
+        }
+        await SupabaseGateway.createPatientUser(
+          fullName: submission.respondentName,
+          email: normalizedEmail,
+          password: password,
+        );
+      } else {
+        await LocalStore.cacheOfflineUser(
+          OfflineUserCache(
+            id: _uuid.v4(),
+            email: normalizedEmail,
+            role: AccountRole.patient,
+            credentialHash: _hashCredential(normalizedEmail, password),
+            lastLoginAt: DateTime.now().toUtc(),
+          ),
+        );
+      }
+
+      await _logAuditEvent(
+        action: 'collection.patient_account.create',
+        entityType: 'account',
+        entityId: submission.clientSubmissionId,
+        summary: 'Created patient account for ${submission.respondentName}.',
+        metadata: {
+          'email': normalizedEmail,
+          'client_submission_id': submission.clientSubmissionId,
+        },
+      );
+      return true;
+    } catch (error) {
+      errorMessage = _friendlyErrorMessage(error);
+      notifyListeners();
+      return false;
     }
   }
 
@@ -699,6 +790,15 @@ class AppController extends ChangeNotifier {
         return;
       }
 
+      if (isPatient) {
+        await _logAuditEvent(
+          action: 'sync.skip',
+          entityType: 'sync',
+          summary: 'Skipped sync because patient accounts are view-only.',
+        );
+        return;
+      }
+
       final connectivity = await Connectivity().checkConnectivity();
       if (connectivity.contains(ConnectivityResult.none)) {
         await _logAuditEvent(
@@ -805,6 +905,8 @@ class AppController extends ChangeNotifier {
   }
 
   HealthSubmission createSubmission({
+    String? clientSubmissionId,
+    DateTime? createdAt,
     required String respondentName,
     required int? respondentAge,
     required String address,
@@ -821,7 +923,7 @@ class AppController extends ChangeNotifier {
   }) {
     final now = DateTime.now().toUtc();
     return HealthSubmission(
-      clientSubmissionId: _uuid.v4(),
+      clientSubmissionId: clientSubmissionId ?? _uuid.v4(),
       respondentName: respondentName.trim(),
       respondentAge: respondentAge,
       address: address.trim(),
@@ -835,45 +937,141 @@ class AppController extends ChangeNotifier {
       surveyData: surveyData,
       consentGiven: consentGiven,
       notes: notes.trim(),
-      createdAt: now,
+      createdAt: createdAt ?? now,
       syncStatus: SyncStatus.draft,
       updatedAt: now,
     );
   }
 
-  Future<void> deleteLocalSubmission(String clientSubmissionId) async {
-    HealthSubmission? deleted;
+  Future<void> archiveSubmission(String clientSubmissionId) async {
+    HealthSubmission? archived;
     for (final submission in submissions) {
       if (submission.clientSubmissionId == clientSubmissionId) {
-        deleted = submission;
+        archived = submission;
         break;
       }
     }
-    
-    if (deleted == null) return;
 
-    if (deleted.remoteUpdatedAt == null) {
-      await LocalStore.deleteSubmission(clientSubmissionId);
-    } else {
-      final softDeleted = deleted.copyWith(
-        isDeleted: true,
-        deletedAt: DateTime.now().toUtc(),
-        deletedBy: activeEmail,
-        syncStatus: SyncStatus.pendingDelete,
-        updatedAt: DateTime.now().toUtc(),
-      );
-      await LocalStore.upsertSubmission(softDeleted);
-    }
+    if (archived == null || archived.isDeleted) return;
+
+    final archivedAt = DateTime.now().toUtc();
+    final shouldSyncArchive = archived.syncStatus != SyncStatus.draft;
+    final softDeleted = archived.copyWith(
+      isDeleted: true,
+      deletedAt: archivedAt,
+      deletedBy: activeEmail,
+      syncStatus: shouldSyncArchive
+          ? SyncStatus.pendingDelete
+          : SyncStatus.draft,
+      updatedAt: archivedAt,
+      lastError: null,
+    );
+    await LocalStore.upsertSubmission(softDeleted);
 
     _reloadSubmissions();
-    unawaited(syncPending());
+    if (shouldSyncArchive) {
+      unawaited(syncPending());
+    }
 
     await _logAuditEvent(
-      action: 'report.record.delete',
+      action: 'report.record.archive',
       entityType: 'household_assessment',
       entityId: clientSubmissionId,
-      summary: 'Deleted report record for ${deleted.respondentName}.',
+      summary: 'Archived report record for ${archived.respondentName}.',
     );
+  }
+
+  Future<void> deleteLocalSubmission(String clientSubmissionId) {
+    return archiveSubmission(clientSubmissionId);
+  }
+
+  Future<void> restoreArchivedSubmission(String clientSubmissionId) async {
+    if (!isAdmin) {
+      adminErrorMessage = 'Only admins can restore archived records.';
+      notifyListeners();
+      return;
+    }
+
+    final archived = _submissionById(clientSubmissionId);
+    if (archived == null || !archived.isDeleted) {
+      return;
+    }
+
+    isAdminActionBusy = true;
+    adminErrorMessage = null;
+    notifyListeners();
+    try {
+      if (isSupabaseConfigured && isSignedIn) {
+        await SupabaseGateway.restoreAssessment(clientSubmissionId);
+      }
+
+      final restoredAt = DateTime.now().toUtc();
+      final restored = archived.copyWith(
+        isDeleted: false,
+        deletedAt: null,
+        deletedBy: null,
+        syncStatus: archived.remoteUpdatedAt == null
+            ? archived.syncStatus
+            : SyncStatus.synced,
+        updatedAt: restoredAt,
+        lastError: null,
+      );
+      await LocalStore.upsertSubmission(restored);
+      _reloadSubmissions();
+
+      await _logAuditEvent(
+        action: 'report.record.restore',
+        entityType: 'household_assessment',
+        entityId: clientSubmissionId,
+        summary:
+            'Restored archived report record for ${archived.respondentName}.',
+      );
+    } catch (error) {
+      adminErrorMessage = _friendlyErrorMessage(error);
+    } finally {
+      isAdminActionBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> hardDeleteSubmission(String clientSubmissionId) async {
+    if (!isAdmin) {
+      adminErrorMessage = 'Only admins can permanently delete records.';
+      notifyListeners();
+      return;
+    }
+
+    final deleted = _submissionById(clientSubmissionId);
+    if (deleted == null) {
+      return;
+    }
+    if (!deleted.isDeleted) {
+      adminErrorMessage = 'Archive the record before permanently deleting it.';
+      notifyListeners();
+      return;
+    }
+
+    isAdminActionBusy = true;
+    adminErrorMessage = null;
+    notifyListeners();
+    try {
+      if (isSupabaseConfigured && isSignedIn) {
+        await SupabaseGateway.hardDeleteAssessment(clientSubmissionId);
+      }
+      await LocalStore.deleteSubmission(clientSubmissionId);
+      await _logAuditEvent(
+        action: 'report.record.hard_delete',
+        entityType: 'household_assessment',
+        entityId: clientSubmissionId,
+        summary:
+            'Permanently deleted report record for ${deleted.respondentName}.',
+      );
+    } catch (error) {
+      adminErrorMessage = _friendlyErrorMessage(error);
+    } finally {
+      isAdminActionBusy = false;
+      _reloadSubmissions();
+    }
   }
 
   @visibleForTesting
@@ -933,6 +1131,7 @@ class AppController extends ChangeNotifier {
     ) {
       if (!isSupabaseConfigured ||
           !isSignedIn ||
+          isPatient ||
           connectivity.contains(ConnectivityResult.none)) {
         return;
       }
@@ -975,7 +1174,7 @@ class AppController extends ChangeNotifier {
 
     try {
       var remoteHealthTips = await SupabaseGateway.listHealthTips();
-      
+
       // If remote is empty but we have local tips (e.g. created in local mode), upload them
       if (remoteHealthTips.isEmpty && healthTips.isNotEmpty) {
         for (final tip in healthTips) {
@@ -1349,10 +1548,7 @@ class AppController extends ChangeNotifier {
         _lornaCruzDemoSubmission(
           createdAt: lorna.createdAt,
           syncStatus: lorna.syncStatus,
-        ).copyWith(
-          editHistory: lorna.editHistory,
-          lastError: lorna.lastError,
-        ),
+        ).copyWith(editHistory: lorna.editHistory, lastError: lorna.lastError),
       );
       didUpdate = true;
     }
@@ -1363,10 +1559,7 @@ class AppController extends ChangeNotifier {
         _mariaSantosDemoSubmission(
           createdAt: maria.createdAt,
           syncStatus: maria.syncStatus,
-        ).copyWith(
-          editHistory: maria.editHistory,
-          lastError: maria.lastError,
-        ),
+        ).copyWith(editHistory: maria.editHistory, lastError: maria.lastError),
       );
       didUpdate = true;
     }
@@ -1377,10 +1570,7 @@ class AppController extends ChangeNotifier {
         _junReyesDemoSubmission(
           createdAt: jun.createdAt,
           syncStatus: jun.syncStatus,
-        ).copyWith(
-          editHistory: jun.editHistory,
-          lastError: jun.lastError,
-        ),
+        ).copyWith(editHistory: jun.editHistory, lastError: jun.lastError),
       );
       didUpdate = true;
     }
@@ -1434,20 +1624,21 @@ class AppController extends ChangeNotifier {
         'place_of_work_category': 'School',
         'place_of_origin': 'Metro Manila',
         'length_of_residence': '10 years',
-      }
+      },
     ];
 
-    final surveyData = _lornaCruzSurveyData(familyRows)..addAll({
-      'control_no': 'CTRL-001',
-      'number_of_family': 5,
-      'address': 'Barangay San Isidro',
-      'first_visit_date': '2026-05-20',
-      'informant': 'Maria Santos',
-      'surveyed_by': 'Nurse John',
-      'time_started': '10:00',
-      'time_finished': '11:00',
-      'status_of_last_visit': 'Completed',
-    });
+    final surveyData = _lornaCruzSurveyData(familyRows)
+      ..addAll({
+        'control_no': 'CTRL-001',
+        'number_of_family': 5,
+        'address': 'Barangay San Isidro',
+        'first_visit_date': '2026-05-20',
+        'informant': 'Maria Santos',
+        'surveyed_by': 'Nurse John',
+        'time_started': '10:00',
+        'time_finished': '11:00',
+        'status_of_last_visit': 'Completed',
+      });
 
     return HealthSubmission(
       clientSubmissionId: 'demo-household-001',
@@ -1509,20 +1700,21 @@ class AppController extends ChangeNotifier {
         'place_of_work_category': 'Construction',
         'place_of_origin': 'Visayas',
         'length_of_residence': '5 years',
-      }
+      },
     ];
 
-    final surveyData = _lornaCruzSurveyData(familyRows)..addAll({
-      'control_no': 'CTRL-002',
-      'number_of_family': 4,
-      'address': 'Purok 3, Barangay Mabini',
-      'first_visit_date': '2026-05-21',
-      'informant': 'Jun Reyes',
-      'surveyed_by': 'Nurse Sarah',
-      'time_started': '14:00',
-      'time_finished': '15:30',
-      'status_of_last_visit': 'Completed',
-    });
+    final surveyData = _lornaCruzSurveyData(familyRows)
+      ..addAll({
+        'control_no': 'CTRL-002',
+        'number_of_family': 4,
+        'address': 'Purok 3, Barangay Mabini',
+        'first_visit_date': '2026-05-21',
+        'informant': 'Jun Reyes',
+        'surveyed_by': 'Nurse Sarah',
+        'time_started': '14:00',
+        'time_finished': '15:30',
+        'status_of_last_visit': 'Completed',
+      });
 
     return HealthSubmission(
       clientSubmissionId: 'demo-household-002',
@@ -1745,15 +1937,10 @@ class AppController extends ChangeNotifier {
           'prenatal_checkup_without': false,
           'tetanus_vaccination_with': true,
           'tetanus_vaccination_without': false,
-        }
+        },
       ],
       'communicable_disease_records': [
-        {
-          'name': 'Rica Cruz',
-          'age': 9,
-          'gender': 'Female',
-          'cd': 'Chickenpox',
-        }
+        {'name': 'Rica Cruz', 'age': 9, 'gender': 'Female', 'cd': 'Chickenpox'},
       ],
       'anthropometric_data_under_5': [
         {
@@ -1769,7 +1956,7 @@ class AppController extends ChangeNotifier {
           'waist_hip_ratio_remarks': 'Normal',
           'mid_upper_arm_circumference': 16.5,
           'mid_upper_arm_remarks': 'Normal',
-        }
+        },
       ],
       'food_recall_24_hour': [
         {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -51,6 +53,9 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
   bool _accountCreateRequested = false;
   bool _consentGiven = false;
   _CollectPart _currentPart = _CollectPart.demographic;
+  String? _activeDraftSubmissionId;
+  DateTime? _activeDraftCreatedAt;
+  bool _isRestoringDraft = false;
 
   @override
   void initState() {
@@ -58,13 +63,23 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
     WidgetsBinding.instance.addObserver(this);
     _surveyData['family_members'] = _familyRowsForCount();
     _surveyData['time_started'] = _currentTime();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final drafts = ref.read(appControllerProvider).draftSubmissions;
+      if (drafts.isNotEmpty && !_hasDraftContent()) {
+        _restoreDraft(drafts.first, silent: true);
+      }
+    });
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      if (_nameController.text.trim().isNotEmpty) {
-        _save(submit: false, silent: true);
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      if (_hasDraftContent()) {
+        unawaited(_saveDraft(silent: true));
       }
     }
   }
@@ -90,8 +105,8 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
 
     return PopScope(
       onPopInvokedWithResult: (didPop, result) {
-        if (_nameController.text.trim().isNotEmpty) {
-          _save(submit: false, silent: true);
+        if (_hasDraftContent()) {
+          unawaited(_saveDraft(silent: true));
         }
       },
       child: AppPage(
@@ -99,59 +114,78 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
         subtitle: 'Household health assessment',
         controller: _scrollController,
         leading: BackButton(
-          onPressed: () {
-            if (_nameController.text.trim().isNotEmpty) {
-              _save(submit: false, silent: true);
+          onPressed: () async {
+            if (_hasDraftContent()) {
+              await _saveDraft(silent: true);
+            }
+            if (!context.mounted) {
+              return;
             }
             context.go('/home');
           },
         ),
-      children: [
-        Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _CollectPartSelector(
-                currentPart: _currentPart,
-                onChanged: (part) => setState(() => _currentPart = part),
-              ),
-              const SizedBox(height: 16),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                child: KeyedSubtree(
-                  key: ValueKey(_currentPart),
-                  child: SurveyContext(
-                    surveyData: _surveyData,
-                    onGlobalChanged: _setSurveyDataValue,
-                    child: _currentPartSection(),
+        children: [
+          if (controller.draftSubmissions.isNotEmpty ||
+              _activeDraftSubmissionId != null)
+            _CollectionArchiveCard(
+              drafts: controller.draftSubmissions,
+              activeDraftId: _activeDraftSubmissionId,
+              onResume: _restoreDraft,
+              onNewDraft: _startNewDraft,
+            ),
+          Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _CollectPartSelector(
+                  currentPart: _currentPart,
+                  onChanged: (part) => setState(() => _currentPart = part),
+                ),
+                const SizedBox(height: 16),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  child: KeyedSubtree(
+                    key: ValueKey(_currentPart),
+                    child: SurveyContext(
+                      surveyData: _surveyData,
+                      onGlobalChanged: _setSurveyDataValue,
+                      child: _currentPartSection(),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              _PartControls(
-                currentPart: _currentPart,
-                onPrevious: _goToPreviousPart,
-                onNext: _goToNextPart,
-              ),
-              const SizedBox(height: 16),
-              if (controller.errorMessage != null)
-                Text(
-                  controller.errorMessage!,
-                  style: const TextStyle(color: KasudloColors.critical),
+                const SizedBox(height: 16),
+                _PartControls(
+                  currentPart: _currentPart,
+                  onPrevious: _goToPreviousPart,
+                  onNext: _goToNextPart,
                 ),
-              if (_currentPart == _CollectPart.concerns)
-                ElevatedButton.icon(
+                const SizedBox(height: 16),
+                if (controller.errorMessage != null)
+                  Text(
+                    controller.errorMessage!,
+                    style: const TextStyle(color: KasudloColors.critical),
+                  ),
+                OutlinedButton.icon(
                   onPressed: controller.isBusy
                       ? null
-                      : () => _save(submit: true),
-                  icon: const Icon(Icons.cloud_upload_outlined),
-                  label: const Text('Submit'),
+                      : () => _save(submit: false),
+                  icon: const Icon(Icons.archive_outlined),
+                  label: const Text('Save Draft'),
                 ),
-            ],
+                const SizedBox(height: 10),
+                if (_currentPart == _CollectPart.concerns)
+                  ElevatedButton.icon(
+                    onPressed: controller.isBusy
+                        ? null
+                        : () => _save(submit: true),
+                    icon: const Icon(Icons.cloud_upload_outlined),
+                    label: const Text('Submit'),
+                  ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
       ),
     );
   }
@@ -293,6 +327,11 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
   }
 
   Future<void> _save({required bool submit, bool silent = false}) async {
+    if (!submit) {
+      await _saveDraft(silent: silent);
+      return;
+    }
+
     if (!_profileFieldsAreValid()) {
       if (!silent) {
         setState(() => _currentPart = _CollectPart.demographic);
@@ -302,6 +341,18 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
           return;
         }
         _showMessage('Complete community profile first.');
+      }
+      return;
+    }
+    if (!_accountFieldsAreValid()) {
+      if (!silent) {
+        setState(() => _currentPart = _CollectPart.demographic);
+        await Future<void>.delayed(Duration.zero);
+        _formKey.currentState?.validate();
+        if (!mounted) {
+          return;
+        }
+        _showMessage('Complete account details first.');
       }
       return;
     }
@@ -323,6 +374,9 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
     final controller = ref.read(appControllerProvider);
     final surveyData = _buildSurveyData();
     final submission = _buildSubmission(controller, surveyData);
+    final shouldCreateAccount = submit && _accountCreateRequested;
+    final accountEmail = _accountEmailController.text.trim();
+    final accountPassword = _accountPasswordController.text;
     AiHealthGuidance? guidance;
 
     if (submit) {
@@ -330,10 +384,26 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => const Center(
-            child: CircularProgressIndicator(),
-          ),
+          builder: (context) =>
+              const Center(child: CircularProgressIndicator()),
         );
+      }
+      if (shouldCreateAccount) {
+        final accountCreated = await controller
+            .createPatientAccountForSubmission(
+              submission: submission,
+              email: accountEmail,
+              password: accountPassword,
+            );
+        if (!accountCreated) {
+          if (mounted && !silent) {
+            Navigator.of(context).pop();
+            _showMessage(
+              controller.errorMessage ?? 'Unable to create patient account.',
+            );
+          }
+          return;
+        }
       }
       await controller.submit(submission);
       guidance = await controller.analyzeAndSaveSubmissionGuidance(submission);
@@ -359,8 +429,32 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
       if (mounted && !silent) {
         context.go('/reports');
       }
-    } else {
-      if (!silent) _showMessage('Draft saved.');
+    }
+  }
+
+  Future<void> _saveDraft({bool silent = false}) async {
+    if (_isRestoringDraft) {
+      return;
+    }
+    if (!_hasDraftContent()) {
+      if (!silent) {
+        _showMessage('Enter details before saving a draft.');
+      }
+      return;
+    }
+
+    final controller = ref.read(appControllerProvider);
+    final surveyData = _buildSurveyData();
+    final submission = _buildSubmission(controller, surveyData);
+    await controller.saveDraft(submission);
+    _activeDraftSubmissionId = submission.clientSubmissionId;
+    _activeDraftCreatedAt = submission.createdAt;
+
+    if (!mounted) {
+      return;
+    }
+    if (!silent) {
+      _showMessage('Draft saved.');
     }
   }
 
@@ -375,6 +469,8 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
     );
 
     return controller.createSubmission(
+      clientSubmissionId: _activeDraftSubmissionId,
+      createdAt: _activeDraftCreatedAt,
       respondentName: _nameController.text,
       respondentAge: int.tryParse(_ageController.text),
       address: _addressController.text,
@@ -389,6 +485,72 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
       consentGiven: _consentGiven,
       notes: _notesController.text,
     );
+  }
+
+  Future<void> _startNewDraft() async {
+    if (_hasDraftContent()) {
+      await _saveDraft(silent: true);
+    }
+    if (!mounted) {
+      return;
+    }
+    _resetForm();
+  }
+
+  void _restoreDraft(HealthSubmission submission, {bool silent = false}) {
+    _isRestoringDraft = true;
+    final surveyData = _surveyDataForSubmission(submission);
+    final familyRows = _familyRowsFromSurveyData(surveyData);
+    final familyCount = submission.familyMembersCount > 0
+        ? submission.familyMembersCount
+        : familyRows.length;
+
+    setState(() {
+      _activeDraftSubmissionId = submission.clientSubmissionId;
+      _activeDraftCreatedAt = submission.createdAt;
+      _nameController.text = submission.respondentName;
+      _ageController.text = submission.respondentAge?.toString() ?? '';
+      _addressController.text = submission.address;
+      _familyCountController.text = familyCount > 0 ? '$familyCount' : '1';
+      _notesController.text = submission.notes;
+      _accountEmailController.text = accountEmailFromData(surveyData);
+      _accountPasswordController.clear();
+      _accountConfirmPasswordController.clear();
+      _healthProblems
+        ..clear()
+        ..addAll(submission.healthProblems);
+      _communityConcerns
+        ..clear()
+        ..addAll(submission.communityConcerns);
+      _surveyData
+        ..clear()
+        ..addAll(surveyData);
+      _surveyData['family_members'] = familyRows.isEmpty
+          ? _familyRowsForCount()
+          : _renumberFamilyRows(familyRows);
+      _surveyData['number_of_family'] =
+          int.tryParse(_familyCountController.text.trim()) ??
+          _familyCountController.text.trim();
+      _surveyData['time_started'] ??= _currentTime();
+      _vaccinationStatus = submission.vaccinationStatus.trim().isEmpty
+          ? 'Unknown'
+          : submission.vaccinationStatus;
+      _waterSanitation = submission.waterSanitation.trim().isEmpty
+          ? 'Safe water and sanitary toilet'
+          : submission.waterSanitation;
+      _nutritionalStatus = submission.nutritionalStatus.trim().isEmpty
+          ? 'Normal'
+          : submission.nutritionalStatus;
+      _accountCreateRequested = accountCreateRequestedFromData(surveyData);
+      _consentGiven = submission.consentGiven;
+      _currentPart = _CollectPart.demographic;
+    });
+
+    _isRestoringDraft = false;
+    if (!silent) {
+      _showMessage('Draft restored.');
+      _scrollToTop();
+    }
   }
 
   void _resetForm() {
@@ -413,6 +575,8 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
       _accountCreateRequested = false;
       _consentGiven = false;
       _currentPart = _CollectPart.demographic;
+      _activeDraftSubmissionId = null;
+      _activeDraftCreatedAt = null;
     });
   }
 
@@ -422,6 +586,103 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
         _addressController.text.trim().isNotEmpty &&
         familyCount != null &&
         familyCount >= 1;
+  }
+
+  bool _accountFieldsAreValid() {
+    if (!_accountCreateRequested) {
+      return true;
+    }
+    final email = _accountEmailController.text.trim();
+    final password = _accountPasswordController.text;
+    final confirmPassword = _accountConfirmPasswordController.text;
+    return accountEmailLooksValid(email) &&
+        password.length >= 6 &&
+        confirmPassword == password;
+  }
+
+  bool _hasDraftContent() {
+    if (_nameController.text.trim().isNotEmpty ||
+        _ageController.text.trim().isNotEmpty ||
+        _addressController.text.trim().isNotEmpty ||
+        _notesController.text.trim().isNotEmpty ||
+        _accountEmailController.text.trim().isNotEmpty ||
+        _accountPasswordController.text.isNotEmpty ||
+        _accountConfirmPasswordController.text.isNotEmpty ||
+        _healthProblems.isNotEmpty ||
+        _communityConcerns.isNotEmpty ||
+        _accountCreateRequested ||
+        _consentGiven) {
+      return true;
+    }
+
+    final familyCount = _familyCountController.text.trim();
+    if (familyCount.isNotEmpty && familyCount != '1') {
+      return true;
+    }
+
+    return _surveyData.entries.any((entry) {
+      if (entry.key == 'time_started') {
+        return false;
+      }
+      if (entry.key == 'number_of_family') {
+        return '${entry.value}'.trim() != '1';
+      }
+      if (entry.key == 'family_members') {
+        return _familyRowsHaveContent(_familyRowsFromSurveyData(_surveyData));
+      }
+      return _valueHasContent(_compactValue(entry.value));
+    });
+  }
+
+  bool _familyRowsHaveContent(List<Map<String, dynamic>> rows) {
+    for (final row in rows) {
+      for (final entry in row.entries) {
+        if (entry.key == 'member_no') {
+          continue;
+        }
+        if (_valueHasContent(_compactValue(entry.value))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  Map<String, dynamic> _surveyDataForSubmission(HealthSubmission submission) {
+    final surveyData = Map<String, dynamic>.from(submission.surveyData);
+    surveyData['informant'] = submission.respondentName;
+    surveyData['address'] = submission.address;
+    surveyData['number_of_family'] = submission.familyMembersCount;
+    surveyData['health_problems'] = submission.healthProblems;
+    surveyData['vaccination_status'] = submission.vaccinationStatus;
+    surveyData['water_sanitation'] = submission.waterSanitation;
+    surveyData['nutritional_status'] = submission.nutritionalStatus;
+    surveyData['community_concerns'] = submission.communityConcerns;
+    surveyData['notes'] = submission.notes;
+    surveyData[accountCreateRequestedKey] = accountCreateRequestedFromData(
+      surveyData,
+    );
+    surveyData[accountEmailKey] = accountEmailFromData(surveyData);
+    if (_familyRowsFromSurveyData(surveyData).isEmpty &&
+        submission.familyMembers.isNotEmpty) {
+      surveyData['family_members'] = submission.familyMembers
+          .map((member) => member.toSurveyJson())
+          .toList();
+    }
+    return surveyData;
+  }
+
+  List<Map<String, dynamic>> _familyRowsFromSurveyData(
+    Map<String, dynamic> surveyData,
+  ) {
+    final value = surveyData['family_members'];
+    if (value is List) {
+      return value
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+    }
+    return const [];
   }
 
   Map<String, dynamic> _buildSurveyData() {
@@ -553,6 +814,110 @@ class _CollectionScreenState extends ConsumerState<CollectionScreen>
   }
 }
 
+class _CollectionArchiveCard extends StatelessWidget {
+  const _CollectionArchiveCard({
+    required this.drafts,
+    required this.activeDraftId,
+    required this.onResume,
+    required this.onNewDraft,
+  });
+
+  final List<HealthSubmission> drafts;
+  final String? activeDraftId;
+  final ValueChanged<HealthSubmission> onResume;
+  final Future<void> Function() onNewDraft;
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleDrafts = drafts.take(4).toList();
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Collection archive',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              TextButton.icon(
+                onPressed: onNewDraft,
+                icon: const Icon(Icons.add),
+                label: const Text('New'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (visibleDrafts.isEmpty)
+            Text(
+              'Current input will be kept as a draft when you leave.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: KasudloColors.muted),
+            )
+          else
+            Column(
+              children: [
+                for (final draft in visibleDrafts) ...[
+                  _DraftArchiveTile(
+                    draft: draft,
+                    active: draft.clientSubmissionId == activeDraftId,
+                    onResume: () => onResume(draft),
+                  ),
+                  if (draft != visibleDrafts.last) const Divider(height: 1),
+                ],
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DraftArchiveTile extends StatelessWidget {
+  const _DraftArchiveTile({
+    required this.draft,
+    required this.active,
+    required this.onResume,
+  });
+
+  final HealthSubmission draft;
+  final bool active;
+  final VoidCallback onResume;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(
+        backgroundColor: KasudloColors.primary.withValues(alpha: 0.12),
+        foregroundColor: KasudloColors.primary,
+        child: const Icon(Icons.inventory_2_outlined),
+      ),
+      title: Text(
+        _submissionTitle(draft),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        _draftSubtitle(draft),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: active
+          ? const StatusBadge(label: 'Active', color: KasudloColors.secondary)
+          : TextButton.icon(
+              onPressed: onResume,
+              icon: const Icon(Icons.restore_outlined),
+              label: const Text('Resume'),
+            ),
+    );
+  }
+}
+
 class _CollectPartSelector extends StatelessWidget {
   const _CollectPartSelector({
     required this.currentPart,
@@ -568,9 +933,7 @@ class _CollectPartSelector extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       child: SegmentedButton<_CollectPart>(
         style: SegmentedButton.styleFrom(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
         showSelectedIcon: false,
         selected: {currentPart},
@@ -630,6 +993,29 @@ String _partLabel(_CollectPart part) => switch (part) {
   _CollectPart.leadership => 'V. Leadership',
   _CollectPart.concerns => 'VI. Concerns',
 };
+
+String _submissionTitle(HealthSubmission submission) {
+  final name = submission.respondentName.trim();
+  if (name.isNotEmpty) {
+    return name;
+  }
+  final address = submission.address.trim();
+  if (address.isNotEmpty) {
+    return address;
+  }
+  return 'Unnamed draft';
+}
+
+String _draftSubtitle(HealthSubmission submission) {
+  final localTime = submission.effectiveUpdatedAt.toLocal();
+  final hour = localTime.hour % 12 == 0 ? 12 : localTime.hour % 12;
+  final minute = localTime.minute.toString().padLeft(2, '0');
+  final meridiem = localTime.hour >= 12 ? 'PM' : 'AM';
+  final memberLabel = submission.familyMembersCount == 1
+      ? '1 member'
+      : '${submission.familyMembersCount} members';
+  return 'Saved ${localTime.month}/${localTime.day}/${localTime.year} $hour:$minute $meridiem - $memberLabel';
+}
 
 class _DemographicSection extends StatelessWidget {
   const _DemographicSection({
