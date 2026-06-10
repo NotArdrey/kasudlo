@@ -1,4 +1,12 @@
-enum SyncStatus { draft, pending, syncing, synced, failed, conflict, pendingDelete }
+enum SyncStatus {
+  draft,
+  pending,
+  syncing,
+  synced,
+  failed,
+  conflict,
+  pendingDelete,
+}
 
 enum AccountRole { nurse, patient, admin }
 
@@ -63,14 +71,16 @@ class OfflineUserCache {
     'last_login_at': lastLoginAt.toIso8601String(),
   };
 
-  factory OfflineUserCache.fromJson(Map<String, dynamic> json) => OfflineUserCache(
-    id: (json['id'] as String?) ?? '',
-    email: (json['email'] as String?) ?? '',
-    role: accountRoleFromString(json['role']),
-    credentialHash: (json['credential_hash'] as String?) ?? '',
-    lastLoginAt: DateTime.tryParse('${json['last_login_at'] ?? ''}') ??
-        DateTime.fromMillisecondsSinceEpoch(0),
-  );
+  factory OfflineUserCache.fromJson(Map<String, dynamic> json) =>
+      OfflineUserCache(
+        id: (json['id'] as String?) ?? '',
+        email: (json['email'] as String?) ?? '',
+        role: accountRoleFromString(json['role']),
+        credentialHash: (json['credential_hash'] as String?) ?? '',
+        lastLoginAt:
+            DateTime.tryParse('${json['last_login_at'] ?? ''}') ??
+            DateTime.fromMillisecondsSinceEpoch(0),
+      );
 }
 
 class AppPreferences {
@@ -347,6 +357,8 @@ class HealthTip {
     required this.createdAt,
     required this.updatedAt,
     this.createdByEmail = '',
+    this.targetPatientId,
+    this.targetPatientIds = const [],
   });
 
   final String id;
@@ -356,14 +368,25 @@ class HealthTip {
   final DateTime createdAt;
   final DateTime updatedAt;
   final String createdByEmail;
+  final String? targetPatientId;
+  final List<String> targetPatientIds;
 
   bool get hasAttachment => attachments.isNotEmpty;
 
+  List<String> get effectiveTargetPatientIds {
+    final ids = targetPatientIds.where((id) => id.trim().isNotEmpty).toList();
+    if (ids.isNotEmpty) {
+      return ids;
+    }
+    final legacyId = targetPatientId?.trim();
+    return legacyId == null || legacyId.isEmpty ? const [] : [legacyId];
+  }
+
   bool get hasImage => attachments.any((a) => a.isImage);
-  
+
   List<HealthTipAttachment> get imageAttachments =>
       attachments.where((a) => a.isImage).toList();
-      
+
   List<HealthTipAttachment> get fileAttachments =>
       attachments.where((a) => !a.isImage).toList();
 
@@ -374,6 +397,8 @@ class HealthTip {
     DateTime? createdAt,
     DateTime? updatedAt,
     String? createdByEmail,
+    String? targetPatientId,
+    List<String>? targetPatientIds,
   }) {
     return HealthTip(
       id: id,
@@ -383,24 +408,31 @@ class HealthTip {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       createdByEmail: createdByEmail ?? this.createdByEmail,
+      targetPatientId: targetPatientId ?? this.targetPatientId,
+      targetPatientIds: targetPatientIds ?? this.targetPatientIds,
     );
   }
 
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'title': title,
-    'description': description,
-    'attachments': attachments.map((a) => a.toJson()).toList(),
-    'created_by_email': createdByEmail,
-    'created_at': createdAt.toIso8601String(),
-    'updated_at': updatedAt.toIso8601String(),
-  };
+  Map<String, dynamic> toJson() {
+    final targets = effectiveTargetPatientIds;
+    return {
+      'id': id,
+      'title': title,
+      'description': description,
+      'attachments': attachments.map((a) => a.toJson()).toList(),
+      'created_by_email': createdByEmail,
+      'target_patient_id': targets.isEmpty ? null : targets.first,
+      'target_patient_ids': targets,
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+    };
+  }
 
   factory HealthTip.fromJson(Map<String, dynamic> json) {
     final createdAt =
         _dateTimeValue(json['created_at']) ??
         DateTime.fromMillisecondsSinceEpoch(0);
-        
+
     final attachmentsList = <HealthTipAttachment>[];
     if (json['attachments'] != null) {
       attachmentsList.addAll(
@@ -410,12 +442,14 @@ class HealthTip {
         json['attachment_base64'] != null &&
         '${json['file_name']}'.isNotEmpty) {
       // Legacy support for single attachment
-      attachmentsList.add(HealthTipAttachment(
-        fileName: (json['file_name'] as String?) ?? '',
-        mimeType: (json['mime_type'] as String?) ?? '',
-        fileSize: _intValue(json['file_size']) ?? 0,
-        base64: (json['attachment_base64'] as String?) ?? '',
-      ));
+      attachmentsList.add(
+        HealthTipAttachment(
+          fileName: (json['file_name'] as String?) ?? '',
+          mimeType: (json['mime_type'] as String?) ?? '',
+          fileSize: _intValue(json['file_size']) ?? 0,
+          base64: (json['attachment_base64'] as String?) ?? '',
+        ),
+      );
     }
 
     return HealthTip(
@@ -424,6 +458,8 @@ class HealthTip {
       description: (json['description'] as String?) ?? '',
       attachments: attachmentsList,
       createdByEmail: (json['created_by_email'] as String?) ?? '',
+      targetPatientId: json['target_patient_id'] as String?,
+      targetPatientIds: _stringList(json['target_patient_ids']),
       createdAt: createdAt,
       updatedAt: _dateTimeValue(json['updated_at']) ?? createdAt,
     );

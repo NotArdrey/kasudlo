@@ -5,129 +5,434 @@ import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kasudlo/src/models.dart';
 import 'package:kasudlo/src/services/report_exporter.dart';
+import 'package:kasudlo/src/services/report_exporter_miniword.dart';
 import 'package:kasudlo/src/survey_schema.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test(
-    'report exporter writes PDF and Docs files for selected records',
-    () async {
-      final submission = HealthSubmission(
-        clientSubmissionId: 'one',
+  test('report exporter writes Word files for selected records', () async {
+    final submission = HealthSubmission(
+      clientSubmissionId: 'one',
+      respondentName: 'Ana Cruz',
+      respondentAge: 30,
+      address: 'Barangay 1',
+      familyMembersCount: 4,
+      familyMembers: const [
+        FamilyMember(
+          name: 'Nico Cruz',
+          age: 8,
+          relationship: 'Child',
+          healthProblems: ['Cough or fever'],
+          vaccinationStatus: 'Incomplete',
+          nutritionalStatus: 'At risk',
+        ),
+      ],
+      healthProblems: const ['Hypertension', 'Diabetes'],
+      vaccinationStatus: 'Complete',
+      waterSanitation: 'Safe water and sanitary toilet',
+      nutritionalStatus: 'Normal',
+      communityConcerns: const ['Dengue risk'],
+      consentGiven: true,
+      notes: 'Follow up next week.',
+      createdAt: DateTime(2026, 5, 23, 9),
+      syncStatus: SyncStatus.synced,
+      surveyData: _sampleSurveyData(),
+    );
+
+    final templateDocs = await exportReportRecords(
+      submissions: [submission],
+      format: ReportExportFormat.templateDocs,
+      exportedAt: DateTime(2026, 5, 24, 13, 5),
+      docmosisRenderer:
+          ({required submission, required fields, required fileName}) async {
+            expect(submission.respondentName, 'Ana Cruz');
+            expect(fileName, contains('kasudlo-community-survey-template'));
+            expect(fields['control_no'], 'CTRL-001');
+            expect(fields['respondentName'], 'Ana Cruz');
+            expect(fields['address'], 'Barangay 1');
+            expect(fields['surveyed_by'], 'Nurse Li');
+            expect(fields['priority_food'], '1');
+            expect(fields['priority_savings'], '6');
+            expect(fields['expenditure_15001_20000'], true);
+            return utf8.encode('docmosis:${fields['control_no']}:$fileName');
+          },
+    );
+    addTearDown(() {
+      for (final path in [templateDocs.savedLocation]) {
+        final file = File(path);
+        if (file.existsSync()) {
+          file.deleteSync();
+        }
+      }
+    });
+
+    expect(templateDocs.fileName, contains('template'));
+    expect(templateDocs.fileName, endsWith('.docx'));
+    expect(File(templateDocs.savedLocation).existsSync(), isTrue);
+
+    final templateBytes = File(templateDocs.savedLocation).readAsStringSync();
+    expect(templateBytes, contains('docmosis:CTRL-001'));
+    expect(templateBytes, contains(templateDocs.fileName));
+  });
+
+  test('template fields normalize dietary recall rows for docx tags', () {
+    Map<String, dynamic> fieldsFor(Object foodRecall) {
+      final surveyData = _sampleSurveyData();
+      surveyData['food_recall_24_hour'] = foodRecall;
+      return docmosisTemplateFields(
+        HealthSubmission(
+          clientSubmissionId: 'dietary',
+          respondentName: 'Ana Cruz',
+          respondentAge: 30,
+          address: 'Barangay 1',
+          familyMembersCount: 4,
+          familyMembers: const [],
+          healthProblems: const [],
+          vaccinationStatus: 'Complete',
+          waterSanitation: 'Safe water and sanitary toilet',
+          nutritionalStatus: 'Normal',
+          communityConcerns: const [],
+          consentGiven: true,
+          notes: '',
+          createdAt: DateTime(2026, 5, 23, 9),
+          syncStatus: SyncStatus.synced,
+          surveyData: surveyData,
+        ),
+      );
+    }
+
+    final manualFields = fieldsFor([
+      {'time_of_day': 'Breakfast', 'food_taken': 'Rice and egg'},
+      {'time_of_day': 'AM Snack', 'food_taken': 'Banana'},
+      {'time_of_day': 'Lunch', 'food_taken': 'Fish and vegetables'},
+      {'time_of_day': 'PM Snack', 'food_taken': 'Bread'},
+      {'time_of_day': 'Dinner', 'food_taken': 'Soup'},
+      {'time_of_day': 'Midnight Snack', 'food_taken': 'Milk'},
+    ]);
+
+    expect(manualFields['breakfast_food'], 'Rice and egg');
+    expect(manualFields['snack1_food'], 'Banana');
+    expect(manualFields['lunch_food'], 'Fish and vegetables');
+    expect(manualFields['snack2_food'], 'Bread');
+    expect(manualFields['dinner_food'], 'Soup');
+    expect(manualFields['midnight_snack_food'], 'Milk');
+
+    final directMealFields = fieldsFor([
+      {
+        'Breakfast': 'Rice porridge',
+        'AM Snack': 'Fruit',
+        'Lunch': 'Chicken',
+        'PM Snack': 'Crackers',
+        'Dinner': 'Rice and soup',
+        'Midnight Snack': 'Water',
+      },
+    ]);
+
+    expect(directMealFields['breakfast_food'], 'Rice porridge');
+    expect(directMealFields['snack1_food'], 'Fruit');
+    expect(directMealFields['lunch_food'], 'Chicken');
+    expect(directMealFields['snack2_food'], 'Crackers');
+    expect(directMealFields['dinner_food'], 'Rice and soup');
+    expect(directMealFields['midnight_snack_food'], 'Water');
+    expect(directMealFields['food_recall_24_hour'], hasLength(6));
+  });
+
+  test('template fields keep repeat tables flexible for extra rows', () {
+    final surveyData = _sampleSurveyData();
+    List<Map<String, dynamic>> repeatedRows(
+      String key,
+      int count, {
+      String? labelKey,
+      String labelPrefix = 'Row',
+    }) {
+      final base = Map<String, dynamic>.from(
+        (surveyData[key] as List).single as Map,
+      );
+      return List.generate(
+        count,
+        (index) => {
+          ...base,
+          if (labelKey != null) labelKey: '$labelPrefix ${index + 1}',
+        },
+      );
+    }
+
+    final familyBase = Map<String, dynamic>.from(
+      (surveyData['family_members'] as List).single as Map,
+    );
+    surveyData['family_members'] = List.generate(
+      12,
+      (index) => {
+        ...familyBase,
+        'member_no': index + 1,
+        'name_of_family_member': 'Member ${index + 1}',
+      },
+    );
+    surveyData['drug_users'] = List.generate(
+      3,
+      (index) => {
+        'name': 'Drug User ${index + 1}',
+        'age': 20 + index,
+        'age_started_using_drugs': 18 + index,
+        'types_of_drugs': 'Type ${index + 1}',
+        'reason': 'Reason ${index + 1}',
+      },
+    );
+    surveyData['alcohol_drinkers'] = List.generate(
+      4,
+      (index) => {
+        'name': 'Alcohol Drinker ${index + 1}',
+        'age': 30 + index,
+        'age_started_drinking_alcohol': 19 + index,
+        'frequency': 'Frequency ${index + 1}',
+        'reason': 'Reason ${index + 1}',
+      },
+    );
+    surveyData['income_earners'] = repeatedRows(
+      'income_earners',
+      5,
+      labelKey: 'family_member_name',
+      labelPrefix: 'Income Earner',
+    );
+    surveyData['cigarette_smokers'] = repeatedRows(
+      'cigarette_smokers',
+      6,
+      labelKey: 'name',
+      labelPrefix: 'Smoker',
+    );
+    surveyData['anthropometric_data_under_5'] = repeatedRows(
+      'anthropometric_data_under_5',
+      7,
+      labelKey: 'name',
+      labelPrefix: 'Anthro Child',
+    );
+    surveyData['immunization_records'] = repeatedRows(
+      'immunization_records',
+      8,
+      labelKey: 'name',
+      labelPrefix: 'Immun Child',
+    );
+    surveyData['antenatal_registrations'] = repeatedRows(
+      'antenatal_registrations',
+      3,
+      labelKey: 'name',
+      labelPrefix: 'Antenatal Patient',
+    );
+    surveyData['morbidity_records'] = repeatedRows(
+      'morbidity_records',
+      4,
+      labelKey: 'name',
+      labelPrefix: 'Morbidity Patient',
+    );
+    surveyData['mortality_records'] = repeatedRows(
+      'mortality_records',
+      3,
+      labelKey: 'name',
+      labelPrefix: 'Mortality Patient',
+    );
+    surveyData['non_communicable_disease_records'] = repeatedRows(
+      'non_communicable_disease_records',
+      3,
+      labelKey: 'name',
+      labelPrefix: 'NCD Patient',
+    );
+    surveyData['communicable_disease_records'] = repeatedRows(
+      'communicable_disease_records',
+      3,
+      labelKey: 'name',
+      labelPrefix: 'CD Patient',
+    );
+    surveyData['blood_pressure_records'] = repeatedRows(
+      'blood_pressure_records',
+      3,
+      labelKey: 'name',
+      labelPrefix: 'BP Patient',
+    );
+    surveyData['rabies_carrier_animals'] = repeatedRows(
+      'rabies_carrier_animals',
+      3,
+      labelKey: 'animal_kind',
+      labelPrefix: 'Animal',
+    );
+    surveyData['food_recall_24_hour'] = repeatedRows(
+      'food_recall_24_hour',
+      3,
+      labelKey: 'food_taken',
+      labelPrefix: 'Meal',
+    );
+
+    final fields = docmosisTemplateFields(
+      HealthSubmission(
+        clientSubmissionId: 'many-rows',
         respondentName: 'Ana Cruz',
         respondentAge: 30,
         address: 'Barangay 1',
-        familyMembersCount: 4,
-        familyMembers: const [
-          FamilyMember(
-            name: 'Nico Cruz',
-            age: 8,
-            relationship: 'Child',
-            healthProblems: ['Cough or fever'],
-            vaccinationStatus: 'Incomplete',
-            nutritionalStatus: 'At risk',
-          ),
-        ],
-        healthProblems: const ['Hypertension', 'Diabetes'],
+        familyMembersCount: 12,
+        familyMembers: const [],
+        healthProblems: const [],
         vaccinationStatus: 'Complete',
         waterSanitation: 'Safe water and sanitary toilet',
         nutritionalStatus: 'Normal',
-        communityConcerns: const ['Dengue risk'],
+        communityConcerns: const [],
         consentGiven: true,
-        notes: 'Follow up next week.',
+        notes: '',
         createdAt: DateTime(2026, 5, 23, 9),
         syncStatus: SyncStatus.synced,
-        surveyData: _sampleSurveyData(),
-      );
+        surveyData: surveyData,
+      ),
+    );
 
-      final pdf = await exportReportRecords(
-        submissions: [submission],
-        format: ReportExportFormat.pdf,
-        exportedAt: DateTime(2026, 5, 24, 13, 5),
-      );
-      final docs = await exportReportRecords(
-        submissions: [submission],
-        format: ReportExportFormat.docs,
-        exportedAt: DateTime(2026, 5, 24, 13, 5),
-      );
-      addTearDown(() {
-        for (final path in [pdf.savedLocation, docs.savedLocation]) {
-          final file = File(path);
-          if (file.existsSync()) {
-            file.deleteSync();
-          }
-        }
-      });
+    final familyRows = fields['family_members'] as List;
+    expect(familyRows, hasLength(12));
+    expect(
+      familyRows.map((row) => (row as Map)['name_of_family_member']),
+      contains('Member 12'),
+    );
+    expect(
+      familyRows.map((row) => (row as Map)['member_name']),
+      contains('Member 12'),
+    );
 
-      expect(pdf.fileName, endsWith('.pdf'));
-      expect(File(pdf.savedLocation).existsSync(), isTrue);
-      final pdfBytes = File(pdf.savedLocation).readAsBytesSync();
-      final keepPdfPath = Platform.environment['KASUDLO_KEEP_EXPORT_PDF'];
-      if (keepPdfPath != null && keepPdfPath.trim().isNotEmpty) {
-        File(keepPdfPath).writeAsBytesSync(pdfBytes);
+    final drugRows = fields['drug_users'] as List;
+    expect(drugRows, hasLength(3));
+    expect((drugRows.last as Map)['name'], 'Drug User 3');
+    expect((drugRows.last as Map)['drug_user_name'], 'Drug User 3');
+
+    final alcoholRows = fields['alcohol_drinkers'] as List;
+    expect(alcoholRows, hasLength(4));
+    expect((alcoholRows.last as Map)['name'], 'Alcohol Drinker 4');
+    expect((alcoholRows.last as Map)['drinker_name'], 'Alcohol Drinker 4');
+
+    expect(fields['income_earners'], hasLength(5));
+    expect(fields['food_recall_24_hour'], hasLength(3));
+
+    final smokerRows = fields['smokers'] as List;
+    expect(fields['cigarette_smokers'], hasLength(6));
+    expect(smokerRows, hasLength(6));
+    expect((smokerRows.last as Map)['name'], 'Smoker 6');
+    expect((smokerRows.last as Map)['smoker_name'], 'Smoker 6');
+
+    final anthroRows = fields['anthropometric'] as List;
+    expect(fields['anthropometric_data_under_5'], hasLength(7));
+    expect(anthroRows, hasLength(7));
+    expect((anthroRows.last as Map)['name'], 'Anthro Child 7');
+    expect((anthroRows.last as Map)['anthro_name'], 'Anthro Child 7');
+
+    final immunRows = fields['immunizations'] as List;
+    expect(fields['immunization_records'], hasLength(8));
+    expect(immunRows, hasLength(8));
+    expect((immunRows.last as Map)['name'], 'Immun Child 8');
+    expect((immunRows.last as Map)['immun_name'], 'Immun Child 8');
+
+    final antenatalRows = fields['antenatal'] as List;
+    expect(fields['antenatal_registrations'], hasLength(3));
+    expect(antenatalRows, hasLength(3));
+    expect((antenatalRows.last as Map)['name'], 'Antenatal Patient 3');
+    expect(
+      (antenatalRows.last as Map)['antenatal_name'],
+      'Antenatal Patient 3',
+    );
+
+    final morbidityRows = fields['morbidity'] as List;
+    expect(fields['morbidity_records'], hasLength(4));
+    expect(morbidityRows, hasLength(4));
+    expect((morbidityRows.last as Map)['name'], 'Morbidity Patient 4');
+    expect(
+      (morbidityRows.last as Map)['morbidity_name'],
+      'Morbidity Patient 4',
+    );
+
+    final mortalityRows = fields['mortality'] as List;
+    expect(fields['mortality_records'], hasLength(3));
+    expect(mortalityRows, hasLength(3));
+    expect((mortalityRows.last as Map)['name'], 'Mortality Patient 3');
+    expect(
+      (mortalityRows.last as Map)['mortality_name'],
+      'Mortality Patient 3',
+    );
+
+    final ncdRows = fields['ncd_history'] as List;
+    expect(fields['non_communicable_disease_records'], hasLength(3));
+    expect(ncdRows, hasLength(3));
+    expect((ncdRows.last as Map)['name'], 'NCD Patient 3');
+    expect((ncdRows.last as Map)['ncd_name'], 'NCD Patient 3');
+
+    final cdRows = fields['cd_history'] as List;
+    expect(fields['communicable_disease_records'], hasLength(3));
+    expect(cdRows, hasLength(3));
+    expect((cdRows.last as Map)['name'], 'CD Patient 3');
+    expect((cdRows.last as Map)['cd_name'], 'CD Patient 3');
+
+    final bpRows = fields['bp_records'] as List;
+    expect(fields['blood_pressure_records'], hasLength(3));
+    expect(bpRows, hasLength(3));
+    expect((bpRows.last as Map)['name'], 'BP Patient 3');
+    expect((bpRows.last as Map)['bp_name'], 'BP Patient 3');
+
+    final rabiesRows = fields['rabies_animals'] as List;
+    expect(fields['rabies_carrier_animals'], hasLength(3));
+    expect(rabiesRows, hasLength(3));
+    expect((rabiesRows.last as Map)['animal_kind'], 'Animal 3');
+    expect((rabiesRows.last as Map)['kind'], 'Animal 3');
+  });
+
+  test('manual Word exporter replaces split tags and schema aliases', () async {
+    final submission = HealthSubmission(
+      clientSubmissionId: 'manual-one',
+      respondentName: 'Ana Cruz',
+      respondentAge: 30,
+      address: 'Barangay 1',
+      familyMembersCount: 4,
+      familyMembers: const [
+        FamilyMember(
+          name: 'Nico Cruz',
+          age: 8,
+          relationship: 'Child',
+          healthProblems: ['Cough or fever'],
+          vaccinationStatus: 'Incomplete',
+          nutritionalStatus: 'At risk',
+        ),
+      ],
+      healthProblems: const ['Hypertension', 'Diabetes'],
+      vaccinationStatus: 'Complete',
+      waterSanitation: 'Safe water and sanitary toilet',
+      nutritionalStatus: 'Normal',
+      communityConcerns: const ['Dengue risk'],
+      consentGiven: true,
+      notes: 'Follow up next week.',
+      createdAt: DateTime(2026, 5, 23, 9),
+      syncStatus: SyncStatus.synced,
+      surveyData: _sampleSurveyData(),
+    );
+
+    final result = await exportReportRecordsMiniword(
+      submissions: [submission],
+      format: ReportExportFormatLegacy.docs,
+      exportedAt: DateTime(2026, 5, 24, 13, 5),
+    );
+    addTearDown(() {
+      final file = File(result.savedLocation);
+      if (file.existsSync()) {
+        file.deleteSync();
       }
-      expect(ascii.decode(pdfBytes.take(5).toList()), '%PDF-');
-      final pdfRaw = latin1.decode(pdfBytes, allowInvalid: true);
-      expect(pdfRaw, contains('/Image'));
-      final pageCount = int.parse(
-        RegExp(r'/Count (\d+)').firstMatch(pdfRaw)!.group(1)!,
-      );
-      expect(pageCount, 6);
+    });
 
-      expect(docs.fileName, endsWith('.docx'));
-      expect(File(docs.savedLocation).existsSync(), isTrue);
-      final archive = ZipDecoder().decodeBytes(
-        File(docs.savedLocation).readAsBytesSync(),
-      );
-      final documentXml = utf8.decode(
-        archive.findFile('word/document.xml')!.readBytes()!,
-      );
-      expect(documentXml, contains('COMMUNITY SURVEY TOOL'));
-      expect(documentXml, contains('<w:drawing>'));
-      expect(documentXml, contains('Ana Cruz'));
-      expect(documentXml, contains('Nico Cruz'));
-      expect(documentXml, contains('Barangay 1'));
-      expect(documentXml, contains('Safe water and sanitary toilet'));
-      expect(documentXml, contains('Hypertension, Diabetes'));
-      expect(documentXml, contains('Cough or fever'));
-      expect(documentXml, contains('Captured PDF Field Responses'));
-      expect(documentXml, contains('CTRL-001'));
-      expect(documentXml, contains('Nurse Li'));
-      expect(documentXml, contains('Religious services, Health Services'));
-      expect(documentXml, contains('Family members row 1 - Member name'));
-      expect(documentXml, contains('Income earners row 1 - Income PHP'));
-      expect(documentXml, contains('Animals raised row 1 - Kind'));
-      expect(documentXml, contains('Dog'));
-      expect(
-        documentXml,
-        contains('Cigarette smoking details row 1 - Age started smoking'),
-      );
-      expect(
-        documentXml,
-        contains('A. Anthropometric Data (5 years below) row 1 - BMI'),
-      );
-      expect(documentXml, contains('Immunization records row 1 - BCG date'));
-      expect(documentXml, contains('2026-01-10'));
-      expect(documentXml, contains('Ateneo health mission'));
-      expect(
-        documentXml,
-        contains('Need street lighting and better drainage.'),
-      );
-      expect(documentXml, contains('Rainwater filtration'));
-      expect(documentXml, contains('Rain barrel'));
-      expect(documentXml, contains('Open dumping, Open burning'));
-      expect(documentXml, contains('No time to do it'));
-      expect(documentXml, contains('Shrimp'));
-      expect(documentXml, contains('Bad for health of family, Others'));
-      expect(documentXml, contains('Partner concern'));
-      expect(archive.findFile('word/media/college-of-nursing.png'), isNotNull);
-      expect(
-        archive.findFile('word/media/bulacan-state-university.png'),
-        isNotNull,
-      );
-    },
-  );
+    final documentText = _docxDocumentText(File(result.savedLocation));
+    expect(documentText, isNot(contains('{{')));
+    expect(documentText, contains('3 sticks/day'));
+    expect(documentText, contains('Stress'));
+    expect(documentText, contains('Mediation by elders'));
+    expect(documentText, contains('Nurse Li'));
+    expect(documentText, contains('BHW, midwife, nurse'));
+    expect(documentText, contains('One midwife per barangay'));
+    expect(documentText, contains('1 team per 5,000 residents'));
+    expect(documentText, contains('Quarterly barangay health nurse training'));
+    expect(documentText, contains('Exported Information Table'));
+    expect(documentText, contains('Control No'));
+    expect(documentText, contains('CTRL-001'));
+    expect(documentText, contains('Priority Food Rank'));
+  });
 
   test('sample survey data covers every schema field key', () {
     final schemaKeys = <String>{};
@@ -163,6 +468,15 @@ void main() {
 
     expect(sampleKeys, containsAll(schemaKeys));
   });
+}
+
+String _docxDocumentText(File file) {
+  final archive = ZipDecoder().decodeBytes(file.readAsBytesSync());
+  final documentXml = archive.findFile('word/document.xml');
+  expect(documentXml, isNotNull);
+
+  final content = utf8.decode(documentXml!.content);
+  return content.replaceAll(RegExp(r'<[^>]+>'), '');
 }
 
 Map<String, dynamic> _sampleSurveyData() {
@@ -232,6 +546,7 @@ Map<String, dynamic> _sampleSurveyData() {
     'monthly_family_expenditures': '15,001-20,000',
     'priorities_and_expenditure_note':
         'Rank 1 as highest priority and 7 as lowest priority.',
+    'priorities_ranking': 'Food: 1; Education: 2; Utilities: 3',
     'priority_food_rank': 1,
     'priority_clothing_rank': 5,
     'priority_education_rank': 2,
@@ -324,6 +639,7 @@ Map<String, dynamic> _sampleSurveyData() {
         'reason': 'Peer influence',
       },
     ],
+    'has_alcohol_drinker': 'Yes',
     'alcohol_drinkers': [
       {
         'name': 'Mario Cruz',
@@ -333,6 +649,7 @@ Map<String, dynamic> _sampleSurveyData() {
         'reason': 'Social events',
       },
     ],
+    'has_children_under_5': 'Yes',
     'anthropometric_data_under_5': [
       {
         'name': 'Mika Cruz',
@@ -349,6 +666,7 @@ Map<String, dynamic> _sampleSurveyData() {
         'mid_upper_arm_remarks': 'Normal',
       },
     ],
+    'food_recall_date': '2026-05-20',
     'food_recall_24_hour': [
       {
         'date': '2026-05-20',
@@ -381,12 +699,12 @@ Map<String, dynamic> _sampleSurveyData() {
     'medication_treatment_during_illness_other': 'Herbal tea after consult',
     'medical_checkup_frequency': 'Once a year',
     'dental_checkup_frequency': 'More than a year',
-    'barangay_health_center_services_available':
-        'Immunization, prenatal care, and nutrition counseling',
+    'barangay_health_center_services_available': ['RHU', 'BHC', 'Others'],
+    'barangay_health_center_services_available_other': 'Nutrition counseling',
     'immunization_records': [
       {
         'name': 'Mika Cruz',
-        'age_in_months': 42,
+        'age_in_mos': 42,
         'gender': 'Female',
         'bcg': '2026-01-10',
         'dpt_1': '2026-02-10',
@@ -404,6 +722,7 @@ Map<String, dynamic> _sampleSurveyData() {
         'fully_immunized_child': true,
       },
     ],
+    'has_pregnant_woman': 'Yes',
     'antenatal_registrations': [
       {
         'name': 'Ana Cruz',
@@ -448,6 +767,7 @@ Map<String, dynamic> _sampleSurveyData() {
         'not_admitted': true,
       },
     ],
+    'has_mortality_past_12_months': 'Yes',
     'mortality_records': [
       {
         'name': 'Juan Cruz Sr.',

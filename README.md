@@ -7,13 +7,13 @@ KASUDLO is a Flutter mobile application for community health data gathering duri
 Flutter is installed for this workspace at:
 
 ```powershell
-E:\flutter-sdk\flutter\bin\flutter.bat
+C:\Users\Neila\devtools\flutter\bin\flutter.bat
 ```
 
 Run in local demo mode:
 
 ```powershell
-$env:Path='E:\flutter-sdk\flutter\bin;' + $env:Path
+$env:Path='C:\Users\Neila\devtools\flutter\bin;' + $env:Path
 flutter run
 ```
 
@@ -22,7 +22,7 @@ Local demo mode seeds sample household records once so the dashboard and reports
 Run against Supabase:
 
 ```powershell
-$env:Path='E:\flutter-sdk\flutter\bin;' + $env:Path
+$env:Path='C:\Users\Neila\devtools\flutter\bin;' + $env:Path
 flutter run `
   --dart-define=SUPABASE_URL=https://ombfilswymuhsaovefuc.supabase.co `
   --dart-define=SUPABASE_PUBLISHABLE_KEY=<publishable-key> `
@@ -81,7 +81,7 @@ writes events through `kasudlo_log_audit_event`; only admins can read events via
 ## Verification
 
 ```powershell
-$env:Path='E:\flutter-sdk\flutter\bin;' + $env:Path
+$env:Path='C:\Users\Neila\devtools\flutter\bin;' + $env:Path
 dart format --set-exit-if-changed .
 flutter analyze
 flutter test

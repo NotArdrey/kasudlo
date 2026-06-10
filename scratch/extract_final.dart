@@ -9,7 +9,9 @@ void main() {
   final content = String.fromCharCodes(documentFile!.content as List<int>);
 
   final doc = XmlDocument.parse(content);
-  final paragraphs = doc.descendants.whereType<XmlElement>().where((e) => e.name.local == 'p');
+  final paragraphs = doc.descendants.whereType<XmlElement>().where(
+    (e) => e.name.local == 'p',
+  );
   var count = 0;
   for (final p in paragraphs) {
     final texts = p.descendants

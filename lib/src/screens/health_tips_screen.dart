@@ -39,32 +39,33 @@ class HealthTipsScreen extends ConsumerWidget {
       title: 'Health Teaching',
       subtitle: canManage ? 'Upload guidance and files' : 'Care guidance',
       children: [
-          if (controller.healthTipsErrorMessage != null)
-            AppCard(
-              child: Text(
-                controller.healthTipsErrorMessage!,
-                style: const TextStyle(color: KasudloColors.critical),
-              ),
+        if (controller.healthTipsErrorMessage != null)
+          AppCard(
+            child: Text(
+              controller.healthTipsErrorMessage!,
+              style: const TextStyle(color: KasudloColors.critical),
             ),
-          if (controller.isHealthTipsLoading)
-            const AppCard(child: LinearProgressIndicator()),
+          ),
+        if (controller.isHealthTipsLoading)
+          const AppCard(child: LinearProgressIndicator()),
 
-          if (healthTips.isEmpty)
-            const EmptyState(
-              icon: Icons.tips_and_updates_outlined,
-              title: 'No health teaching yet',
-              message: 'Health teaching from the care team will appear here.',
-            )
-          else
-            for (final healthTip in healthTips)
-              _HealthTipCard(
-                healthTip: healthTip,
-                canManage: canManage,
-                onEdit: () => _openEditor(context, healthTip),
+        if (healthTips.isEmpty)
+          const EmptyState(
+            icon: Icons.tips_and_updates_outlined,
+            title: 'No health teaching yet',
+            message: 'Health teaching from the care team will appear here.',
+          )
+        else
+          for (final healthTip in healthTips)
+            _HealthTipCard(
+              healthTip: healthTip,
+              canManage: canManage,
+              onEdit: () => _openEditor(context, healthTip),
               onDelete: () => _confirmDelete(context, ref, healthTip),
-                onDownload: (attachment) => _downloadAttachment(context, attachment),
-              ),
-        ],
+              onDownload: (attachment) =>
+                  _downloadAttachment(context, attachment),
+            ),
+      ],
     );
   }
 
@@ -170,6 +171,7 @@ class _HealthTipEditorDialogState
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
   late List<HealthTipAttachment> _attachments;
+  late Set<String> _targetPatientIds;
 
   @override
   void initState() {
@@ -180,6 +182,13 @@ class _HealthTipEditorDialogState
       text: initial?.description ?? '',
     );
     _attachments = initial?.attachments.toList() ?? [];
+    _targetPatientIds = initial?.effectiveTargetPatientIds.toSet() ?? {};
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(appControllerProvider).loadHealthTipPatients();
+      }
+    });
   }
 
   @override
@@ -193,6 +202,9 @@ class _HealthTipEditorDialogState
   Widget build(BuildContext context) {
     final controller = ref.watch(appControllerProvider);
     final editing = widget.initialHealthTip != null;
+    final patients = controller.adminUsers
+        .where((user) => user.role == AccountRole.patient)
+        .toList();
 
     return AlertDialog(
       title: Text(editing ? 'Edit health teaching' : 'Upload health teaching'),
@@ -222,6 +234,17 @@ class _HealthTipEditorDialogState
                     labelText: 'Details',
                     alignLabelWithHint: true,
                   ),
+                ),
+                const SizedBox(height: 12),
+                _VisibilitySelector(
+                  patients: patients,
+                  selectedPatientIds: _targetPatientIds,
+                  isLoading: controller.isAdminLoading,
+                  errorMessage: controller.adminErrorMessage,
+                  onAllPatientsSelected: () {
+                    setState(() => _targetPatientIds.clear());
+                  },
+                  onPatientToggled: _toggleTargetPatient,
                 ),
                 const SizedBox(height: 12),
                 if (_attachments.isNotEmpty) ...[
@@ -283,12 +306,14 @@ class _HealthTipEditorDialogState
         return;
       }
       setState(() {
-        _attachments.add(HealthTipAttachment(
-          fileName: picked!.fileName,
-          mimeType: picked.mimeType,
-          fileSize: picked.bytes.length,
-          base64: base64Encode(picked.bytes),
-        ));
+        _attachments.add(
+          HealthTipAttachment(
+            fileName: picked!.fileName,
+            mimeType: picked.mimeType,
+            fileSize: picked.bytes.length,
+            base64: base64Encode(picked.bytes),
+          ),
+        );
       });
     } catch (error) {
       if (mounted) {
@@ -341,6 +366,7 @@ class _HealthTipEditorDialogState
           title: _titleController.text,
           description: _descriptionController.text,
           attachments: _attachments,
+          targetPatientIds: _targetPatientIds.toList(),
         );
     if (mounted && saved) {
       Navigator.of(context).pop(true);
@@ -351,6 +377,108 @@ class _HealthTipEditorDialogState
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _toggleTargetPatient(String patientId, bool selected) {
+    setState(() {
+      if (selected) {
+        _targetPatientIds.add(patientId);
+      } else {
+        _targetPatientIds.remove(patientId);
+      }
+    });
+  }
+}
+
+class _VisibilitySelector extends StatelessWidget {
+  const _VisibilitySelector({
+    required this.patients,
+    required this.selectedPatientIds,
+    required this.isLoading,
+    required this.errorMessage,
+    required this.onAllPatientsSelected,
+    required this.onPatientToggled,
+  });
+
+  final List<AdminUser> patients;
+  final Set<String> selectedPatientIds;
+  final bool isLoading;
+  final String? errorMessage;
+  final VoidCallback onAllPatientsSelected;
+  final void Function(String patientId, bool selected) onPatientToggled;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedCount = selectedPatientIds.length;
+
+    return InputDecorator(
+      decoration: const InputDecoration(
+        labelText: 'Visibility',
+        alignLabelWithHint: true,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CheckboxListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            value: selectedPatientIds.isEmpty,
+            controlAffinity: ListTileControlAffinity.leading,
+            title: const Text('Seen by all patients'),
+            onChanged: (_) => onAllPatientsSelected(),
+          ),
+          if (isLoading) const LinearProgressIndicator(),
+          if (errorMessage != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              errorMessage!,
+              style: const TextStyle(color: KasudloColors.critical),
+            ),
+          ],
+          if (!isLoading && patients.isEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'No patient accounts available.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: KasudloColors.muted),
+            ),
+          ],
+          if (patients.isNotEmpty) ...[
+            const Divider(height: 16),
+            Text(
+              selectedCount == 0
+                  ? 'All patients selected'
+                  : '$selectedCount patient${selectedCount == 1 ? '' : 's'} selected',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: KasudloColors.muted,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            for (final patient in patients)
+              CheckboxListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                value: selectedPatientIds.contains(patient.id),
+                controlAffinity: ListTileControlAffinity.leading,
+                title: Text(_patientLabel(patient)),
+                subtitle: patient.fullName.trim().isEmpty
+                    ? null
+                    : Text(patient.email),
+                onChanged: (value) =>
+                    onPatientToggled(patient.id, value ?? false),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _patientLabel(AdminUser patient) {
+    final fullName = patient.fullName.trim();
+    return fullName.isEmpty ? patient.email : fullName;
   }
 }
 
@@ -388,9 +516,9 @@ class _AttachmentEditorSummary extends StatelessWidget {
                 ),
                 Text(
                   _formatFileSize(attachment.fileSize),
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: KasudloColors.muted,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelMedium?.copyWith(color: KasudloColors.muted),
                 ),
               ],
             ),
@@ -549,7 +677,9 @@ class _AttachmentTile extends StatelessWidget {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 12),
         leading: Icon(
-          attachment.isImage ? Icons.image_outlined : Icons.description_outlined,
+          attachment.isImage
+              ? Icons.image_outlined
+              : Icons.description_outlined,
           color: KasudloColors.primary,
         ),
         title: Text(attachment.fileName, overflow: TextOverflow.ellipsis),

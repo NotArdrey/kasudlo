@@ -1327,33 +1327,47 @@ class _SurveyMealTimeGroup extends StatelessWidget {
   ) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            margin: const EdgeInsets.only(top: 8),
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Theme.of(
-                context,
-              ).colorScheme.primaryContainer.withOpacity(0.5),
-              shape: BoxShape.circle,
+      child: _SurveyRowContainer(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primaryContainer.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ),
+              ],
             ),
-            child: Icon(
-              icon,
-              size: 20,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: _SurveyTextField(
+            const SizedBox(height: 10),
+            _SurveyTextField(
               label: title,
               value: value,
+              keyboardType: TextInputType.multiline,
+              minLines: 4,
+              maxLines: null,
               onChanged: onChanged,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1543,23 +1557,73 @@ class _SurveyPriorityRankingGroup extends StatelessWidget {
               final val = _stringValue(data[field.$1]);
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12.0),
-                child: DropdownButtonFormField<String>(
-                  key: ValueKey(field.$1 + val),
-                  initialValue: val.isEmpty ? null : val,
-                  isExpanded: true,
-                  decoration: _surveyInputDecoration(
-                    field.$2,
-                    useExternalLabel: true,
+                child: _SurveyRowContainer(
+                  padding: const EdgeInsets.all(12),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isWide = constraints.maxWidth >= 520;
+                      final labelWidget = Row(
+                        children: [
+                          const Icon(
+                            Icons.drag_indicator,
+                            size: 20,
+                            color: KasudloColors.muted,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              field.$2,
+                              style: Theme.of(context).textTheme.labelLarge,
+                            ),
+                          ),
+                        ],
+                      );
+                      final dropdown = DropdownButtonFormField<String>(
+                        key: ValueKey(field.$1 + val),
+                        initialValue: val.isEmpty ? null : val,
+                        isExpanded: true,
+                        decoration: _surveyInputDecoration(
+                          'Rank for ${field.$2}',
+                          useExternalLabel: true,
+                        ),
+                        hint: const Text('Select rank'),
+                        items: [
+                          for (var i = 1; i <= 7; i++)
+                            DropdownMenuItem(
+                              value: '$i',
+                              child: Text(
+                                i == 1
+                                    ? '$i - Highest priority'
+                                    : i == 7
+                                    ? '$i - Lowest priority'
+                                    : '$i',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: (v) => _handleRankChange(field.$1, v),
+                      );
+
+                      if (!isWide) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            labelWidget,
+                            const SizedBox(height: 10),
+                            dropdown,
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        children: [
+                          Expanded(flex: 2, child: labelWidget),
+                          const SizedBox(width: 16),
+                          Expanded(flex: 3, child: dropdown),
+                        ],
+                      );
+                    },
                   ),
-                  hint: const Text('Select rank 1-7'),
-                  items: [
-                    for (var i = 1; i <= 7; i++)
-                      DropdownMenuItem(
-                        value: '$i',
-                        child: Text('$i', overflow: TextOverflow.ellipsis),
-                      ),
-                  ],
-                  onChanged: (v) => _handleRankChange(field.$1, v),
                 ),
               );
             }),

@@ -70,9 +70,7 @@ List<HealthSubmission> getDemoSubmissions() {
       createdAt: now.subtract(const Duration(days: 1, hours: 6)),
       syncStatus: SyncStatus.pending,
     ),
-    _lornaCruzDemoSubmission(
-      createdAt: now.subtract(const Duration(hours: 8)),
-    ),
+    _lornaCruzDemoSubmission(createdAt: now.subtract(const Duration(hours: 8))),
   ];
 }
 
@@ -366,12 +364,7 @@ Map<String, dynamic> _lornaCruzSurveyData(
         'gender': 'Female',
         'ncd': 'Hypertension',
       },
-      {
-        'name': 'Lorna Cruz',
-        'age': 65,
-        'gender': 'Female',
-        'ncd': 'Arthritis',
-      },
+      {'name': 'Lorna Cruz', 'age': 65, 'gender': 'Female', 'ncd': 'Arthritis'},
     ],
     'communicable_disease_records': [],
     'blood_pressure_records': [
@@ -424,20 +417,24 @@ void main() {
   test('Generate UPSERT SQL', () {
     final submissions = getDemoSubmissions();
     final buffer = StringBuffer();
-    
+
     // We assume there's a generic UUID for the worker, but we can just use an existing one or generate it?
     // Wait, user_id is required in household_assessments: `user_id` uuid.
     // Let's use the local-admin or a dummy uuid, or just omit if it's not strictly NOT NULL.
     // Wait, user_id is foreign key to auth.users.id. We must use an existing user_id!
     // We can use a subquery: (SELECT id FROM auth.users LIMIT 1)
-    
+
     for (final s in submissions) {
       final payloadStr = jsonEncode(s.toJson()).replaceAll("'", "''");
-      final familyMembersStr = jsonEncode(s.familyMembers.map((m) => m.toJson()).toList()).replaceAll("'", "''");
-      final healthProblemsStr = '{"${s.healthProblems.join('","')}"}'; // Postgres array format
+      final familyMembersStr = jsonEncode(
+        s.familyMembers.map((m) => m.toJson()).toList(),
+      ).replaceAll("'", "''");
+      final healthProblemsStr =
+          '{"${s.healthProblems.join('","')}"}'; // Postgres array format
       final concernsStr = '{"${s.communityConcerns.join('","')}"}';
-      
-      final sql = '''
+
+      final sql =
+          '''
 INSERT INTO public.household_assessments (
   user_id,
   client_submission_id,
@@ -474,7 +471,9 @@ INSERT INTO public.household_assessments (
 ''';
       buffer.writeln(sql);
     }
-    
-    File('e:/flutter-project/Kasudlo/scratch/upsert.sql').writeAsStringSync(buffer.toString());
+
+    File(
+      'e:/flutter-project/Kasudlo/scratch/upsert.sql',
+    ).writeAsStringSync(buffer.toString());
   });
 }

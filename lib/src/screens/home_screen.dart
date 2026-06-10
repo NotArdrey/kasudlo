@@ -1,4 +1,3 @@
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -38,8 +37,10 @@ class HomeScreen extends ConsumerWidget {
     final email = controller.activeEmail ?? 'Health Worker';
     final fullName = controller.activeFullName;
     final role = controller.activeRole.name;
-    final roleDisplay = role.isNotEmpty ? role.replaceFirst(role[0], role[0].toUpperCase()) : 'User';
-    
+    final roleDisplay = role.isNotEmpty
+        ? role.replaceFirst(role[0], role[0].toUpperCase())
+        : 'User';
+
     String greetingName = email;
     if (fullName != null && fullName.trim().isNotEmpty) {
       final firstName = fullName.trim().split(' ').first;
@@ -56,9 +57,7 @@ class HomeScreen extends ConsumerWidget {
       backgroundColor: KasudloColors.primary,
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
-          decoration: const BoxDecoration(
-            color: KasudloColors.primary,
-          ),
+          decoration: const BoxDecoration(color: KasudloColors.primary),
           child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(24.0),
@@ -78,10 +77,7 @@ class HomeScreen extends ConsumerWidget {
                   const Spacer(),
                   const Text(
                     'Welcome back,',
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: 16,
-                    ),
+                    style: TextStyle(color: Colors.white70, fontSize: 16),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -107,14 +103,17 @@ class HomeScreen extends ConsumerWidget {
     return Text(
       title,
       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-            letterSpacing: -0.5,
-          ),
+        fontWeight: FontWeight.bold,
+        letterSpacing: -0.5,
+      ),
     );
   }
 
   List<Widget> _buildStaffHomeView(
-      BuildContext context, AppController controller, dynamic summary) {
+    BuildContext context,
+    AppController controller,
+    dynamic summary,
+  ) {
     return [
       _buildSectionTitle(context, 'Community Overview'),
       const SizedBox(height: 16),
@@ -127,7 +126,9 @@ class HomeScreen extends ConsumerWidget {
   }
 
   List<Widget> _buildPatientHomeView(
-      BuildContext context, AppController controller) {
+    BuildContext context,
+    AppController controller,
+  ) {
     return [
       Container(
         padding: const EdgeInsets.all(24),
@@ -151,21 +152,27 @@ class HomeScreen extends ConsumerWidget {
                 color: KasudloColors.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: const Icon(Icons.health_and_safety_rounded,
-                  color: KasudloColors.primary, size: 32),
+              child: const Icon(
+                Icons.health_and_safety_rounded,
+                color: KasudloColors.primary,
+                size: 32,
+              ),
             ),
             const SizedBox(height: 16),
             Text(
               'Your Health Matters',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             const Text(
               'Welcome to Kasudlo. Stay updated with the latest health guidelines and reach out if you need assistance.',
-              style:
-                  TextStyle(fontSize: 15, color: Colors.black54, height: 1.5),
+              style: TextStyle(
+                fontSize: 15,
+                color: Colors.black54,
+                height: 1.5,
+              ),
             ),
           ],
         ),
@@ -218,7 +225,9 @@ class HomeScreen extends ConsumerWidget {
         ),
         if ((summary.healthProblems as Map<String, int>).isNotEmpty) ...[
           const SizedBox(height: 16),
-          _HealthProblemsChart(healthProblems: summary.healthProblems as Map<String, int>),
+          _HealthProblemsBreakdown(
+            healthProblems: summary.healthProblems as Map<String, int>,
+          ),
         ],
       ],
     );
@@ -394,10 +403,7 @@ class _ActionTile extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade600,
-                    ),
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
                   ),
                 ],
               ),
@@ -410,8 +416,8 @@ class _ActionTile extends StatelessWidget {
   }
 }
 
-class _HealthProblemsChart extends StatelessWidget {
-  const _HealthProblemsChart({required this.healthProblems});
+class _HealthProblemsBreakdown extends StatelessWidget {
+  const _HealthProblemsBreakdown({required this.healthProblems});
 
   final Map<String, int> healthProblems;
 
@@ -419,7 +425,7 @@ class _HealthProblemsChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final entries = healthProblems.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
-    
+
     final topEntries = entries.take(4).toList();
     final otherEntries = entries.skip(4).toList();
     if (otherEntries.isNotEmpty) {
@@ -434,6 +440,13 @@ class _HealthProblemsChart extends StatelessWidget {
       KasudloColors.critical,
       Colors.grey,
     ];
+    final totalCount = topEntries.fold<int>(
+      0,
+      (sum, entry) => sum + entry.value,
+    );
+    final maxCount = topEntries.fold<int>(0, (max, entry) {
+      return entry.value > max ? entry.value : max;
+    });
 
     return Container(
       decoration: BoxDecoration(
@@ -453,61 +466,137 @@ class _HealthProblemsChart extends StatelessWidget {
         children: [
           Text(
             'Top Health Problems',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 32),
-          SizedBox(
-            height: 200,
-            child: PieChart(
-              PieChartData(
-                sectionsSpace: 2,
-                centerSpaceRadius: 50,
-                sections: List.generate(topEntries.length, (i) {
-                  final entry = topEntries[i];
-                  return PieChartSectionData(
-                    color: colors[i % colors.length],
-                    value: entry.value.toDouble(),
-                    title: '${entry.value}',
-                    radius: 45,
-                    titleStyle: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  );
-                }),
-              ),
-            ),
-          ),
-          const SizedBox(height: 32),
-          Wrap(
-            spacing: 16,
-            runSpacing: 12,
+          const SizedBox(height: 20),
+          Column(
             children: List.generate(topEntries.length, (i) {
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 14,
-                    height: 14,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: colors[i % colors.length],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    topEntries[i].key,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                  ),
-                ],
+              final entry = topEntries[i];
+              final color = colors[i % colors.length];
+              final percentage = totalCount == 0
+                  ? 0.0
+                  : entry.value / totalCount;
+              final barWidth = maxCount == 0 ? 0.0 : entry.value / maxCount;
+
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: i == topEntries.length - 1 ? 0 : 16,
+                ),
+                child: _HealthProblemBarRow(
+                  label: entry.key,
+                  count: entry.value,
+                  percentage: percentage,
+                  barWidth: barWidth,
+                  color: color,
+                ),
               );
             }),
           ),
+          const SizedBox(height: 20),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Total reported concerns',
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Text(
+                '$totalCount',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _HealthProblemBarRow extends StatelessWidget {
+  const _HealthProblemBarRow({
+    required this.label,
+    required this.count,
+    required this.percentage,
+    required this.barWidth,
+    required this.color,
+  });
+
+  final String label;
+  final int count;
+  final double percentage;
+  final double barWidth;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final percentLabel = '${(percentage * 100).round()}%';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              '$count',
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 44,
+              child: Text(
+                percentLabel,
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: SizedBox(
+            height: 10,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ColoredBox(color: color.withValues(alpha: 0.12)),
+                FractionallySizedBox(
+                  widthFactor: barWidth.clamp(0.0, 1.0).toDouble(),
+                  alignment: Alignment.centerLeft,
+                  child: ColoredBox(color: color),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

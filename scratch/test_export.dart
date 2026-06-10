@@ -6,7 +6,9 @@ import 'dart:convert';
 
 void main() async {
   try {
-    final templateBytes = File('e:/flutter-project/Kasudlo/assets/template/cdx_template.docx').readAsBytesSync();
+    final templateBytes = File(
+      'e:/flutter-project/Kasudlo/assets/template/cdx_template.docx',
+    ).readAsBytesSync();
     final archive = ZipDecoder().decodeBytes(templateBytes);
 
     final documentFile = archive.findFile('word/document.xml');
@@ -17,8 +19,13 @@ void main() async {
 
     try {
       final document = XmlDocument.parse(originalXml);
-      for (final p in document.descendants.whereType<XmlElement>().where((e) => e.name.local == 'p')) {
-        final texts = p.descendants.whereType<XmlElement>().where((e) => e.name.local == 't').toList();
+      for (final p in document.descendants.whereType<XmlElement>().where(
+        (e) => e.name.local == 'p',
+      )) {
+        final texts = p.descendants
+            .whereType<XmlElement>()
+            .where((e) => e.name.local == 't')
+            .toList();
         if (texts.length > 1) {
           final fullText = texts.map((e) => e.innerText).join('');
           texts.first.innerText = fullText;
@@ -35,13 +42,13 @@ void main() async {
     final bodyStartIdx = originalXml.indexOf('<w:body>') + '<w:body>'.length;
     final sectPrIdx = originalXml.lastIndexOf('<w:sectPr');
     print('bodyStartIdx: $bodyStartIdx, sectPrIdx: $sectPrIdx');
-    
+
     if (bodyStartIdx == -1 || sectPrIdx == -1 || bodyStartIdx >= sectPrIdx) {
       throw Exception('Could not parse template XML structure');
     }
-    
+
     print('Success testing XML reading logic.');
-  } catch(e) {
+  } catch (e) {
     print('Error: $e');
   }
 }

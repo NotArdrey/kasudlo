@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 
+export 'status_badge.dart';
+
+
 class AppPage extends StatelessWidget {
   const AppPage({
     super.key,
@@ -29,46 +32,43 @@ class AppPage extends StatelessWidget {
       body: CustomScrollView(
         controller: controller,
         slivers: [
-        SliverAppBar(
-          pinned: true,
-          backgroundColor: KasudloColors.primary,
-          iconTheme: const IconThemeData(color: Colors.white),
-          actionsIconTheme: const IconThemeData(color: Colors.white),
-          leading: leading,
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              if (subtitle != null)
+          SliverAppBar(
+            pinned: true,
+            backgroundColor: KasudloColors.primary,
+            iconTheme: const IconThemeData(color: Colors.white),
+            actionsIconTheme: const IconThemeData(color: Colors.white),
+            leading: leading,
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
                 Text(
-                  subtitle!,
+                  title,
                   style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-            ],
+                if (subtitle != null)
+                  Text(
+                    subtitle!,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+              ],
+            ),
+            actions: actions,
           ),
-          actions: actions,
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-          sliver: SliverList.separated(
-            itemBuilder: (context, index) => children[index],
-            separatorBuilder: (context, index) => const SizedBox(height: 16),
-            itemCount: children.length,
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+            sliver: SliverList.separated(
+              itemBuilder: (context, index) => children[index],
+              separatorBuilder: (context, index) => const SizedBox(height: 16),
+              itemCount: children.length,
+            ),
           ),
-        ),
-      ],
-    ),
+        ],
+      ),
     );
   }
 }
@@ -144,36 +144,6 @@ class MetricCard extends StatelessWidget {
   }
 }
 
-class StatusBadge extends StatelessWidget {
-  const StatusBadge({
-    super.key,
-    required this.label,
-    this.color = KasudloColors.primary,
-  });
-
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: color,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class EmptyState extends StatelessWidget {
   const EmptyState({

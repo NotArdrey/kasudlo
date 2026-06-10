@@ -339,7 +339,10 @@ class LocalStore {
       if (decoded is List) {
         return decoded
             .whereType<Map>()
-            .map((item) => OfflineUserCache.fromJson(Map<String, dynamic>.from(item)))
+            .map(
+              (item) =>
+                  OfflineUserCache.fromJson(Map<String, dynamic>.from(item)),
+            )
             .where((user) => user.email.trim().isNotEmpty)
             .toList();
       }

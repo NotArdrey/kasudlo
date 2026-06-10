@@ -116,7 +116,10 @@ class ContactInformationScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Important Contacts', style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                'Important Contacts',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               const ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.email),
@@ -129,34 +132,39 @@ class ContactInformationScreen extends StatelessWidget {
         const SizedBox(height: 24),
         Text('Team Members', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 12),
-        ..._contacts.map((c) => Padding(
-          padding: const EdgeInsets.only(bottom: 12.0),
-          child: AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  c.name,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+        ..._contacts.map(
+          (c) => Padding(
+            padding: const EdgeInsets.only(bottom: 12.0),
+            child: AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    c.name,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                _ContactRow(icon: Icons.location_on, text: c.address),
-                const SizedBox(height: 8),
-                _ContactRow(icon: Icons.phone, text: c.phone),
-                const SizedBox(height: 8),
-                _ContactRow(icon: Icons.email, text: c.email),
-                const Divider(height: 24),
-                Text('Guardian / Parent', style: Theme.of(context).textTheme.labelLarge),
-                const SizedBox(height: 8),
-                _ContactRow(icon: Icons.person, text: c.guardianName),
-                const SizedBox(height: 8),
-                _ContactRow(icon: Icons.phone_android, text: c.guardianPhone),
-              ],
+                  const SizedBox(height: 12),
+                  _ContactRow(icon: Icons.location_on, text: c.address),
+                  const SizedBox(height: 8),
+                  _ContactRow(icon: Icons.phone, text: c.phone),
+                  const SizedBox(height: 8),
+                  _ContactRow(icon: Icons.email, text: c.email),
+                  const Divider(height: 24),
+                  Text(
+                    'Guardian / Parent',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  _ContactRow(icon: Icons.person, text: c.guardianName),
+                  const SizedBox(height: 8),
+                  _ContactRow(icon: Icons.phone_android, text: c.guardianPhone),
+                ],
+              ),
             ),
           ),
-        )),
+        ),
       ],
     );
   }
@@ -164,7 +172,7 @@ class ContactInformationScreen extends StatelessWidget {
 
 class _ContactRow extends StatelessWidget {
   const _ContactRow({required this.icon, required this.text});
-  
+
   final IconData icon;
   final String text;
 
@@ -176,10 +184,7 @@ class _ContactRow extends StatelessWidget {
         Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 12),
         Expanded(
-          child: Text(
-            text,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
+          child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
         ),
       ],
     );

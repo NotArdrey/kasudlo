@@ -39,6 +39,13 @@ migrate_working_dir/
 artifacts/
 test-results/
 supabase/.temp/
+scratch/supabase.zip
+scratch/supabase_cli/
+tools/docmosis/docmosis.properties
+tools/docmosis/build/
+tools/docmosis/docmosisJava*/
+tools/docmosis/*.zip
+tools/docmosis/javadoc/
 
 # Symbolication related
 app.*.symbols

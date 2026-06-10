@@ -18,7 +18,8 @@ class SupabaseGateway {
       'is_deleted, deleted_at, deleted_by';
   static const _healthTipSelect =
       'id, title, description, attachments, '
-      'created_by_email, created_at, updated_at';
+      'created_by_email, target_patient_id, target_patient_ids, '
+      'created_at, updated_at';
   static bool _isPasswordRecoverySession = false;
   static bool _initialAuthLinkHandled = false;
   static final _appLinks = AppLinks();
@@ -133,6 +134,24 @@ class SupabaseGateway {
     }
 
     return users
+        .whereType<Map>()
+        .map((item) => AdminUser.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  static Future<List<AdminUser>> listHealthTipPatients() async {
+    final supabase = client;
+    if (supabase == null) {
+      throw StateError('Supabase is not configured.');
+    }
+
+    final data = await supabase.rpc('kasudlo_list_health_tip_patients');
+
+    if (data is! List) {
+      return const [];
+    }
+
+    return data
         .whereType<Map>()
         .map((item) => AdminUser.fromJson(Map<String, dynamic>.from(item)))
         .toList();
@@ -268,6 +287,15 @@ class SupabaseGateway {
     );
   }
 
+  static Future<int> emailHealthTipCreated(HealthTip healthTip) async {
+    final response = await _invokeFunction('kasudlo-health-tip-email', {
+      'health_tip_id': healthTip.id,
+    });
+
+    final sent = response['sent'];
+    return sent is int ? sent : int.tryParse('$sent') ?? 0;
+  }
+
   static Future<List<HealthTip>> listHealthTips() async {
     final supabase = client;
     if (supabase == null) {
@@ -298,6 +326,10 @@ class SupabaseGateway {
           ...healthTip.toJson(),
           'created_by': user.id,
           'created_by_email': user.email ?? healthTip.createdByEmail,
+          'target_patient_id': healthTip.effectiveTargetPatientIds.isEmpty
+              ? null
+              : healthTip.effectiveTargetPatientIds.first,
+          'target_patient_ids': healthTip.effectiveTargetPatientIds,
         }, onConflict: 'id')
         .select(_healthTipSelect)
         .single();

@@ -369,6 +369,34 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  Future<void> loadHealthTipPatients() async {
+    if (!canManageHealthTips) {
+      adminUsers = const [];
+      notifyListeners();
+      return;
+    }
+
+    isAdminLoading = true;
+    adminErrorMessage = null;
+    notifyListeners();
+    try {
+      if (isSupabaseConfigured) {
+        adminUsers = await SupabaseGateway.listHealthTipPatients();
+      } else if (isAdmin) {
+        adminUsers = _localAdminUsers()
+            .where((user) => user.role == AccountRole.patient)
+            .toList();
+      } else {
+        adminUsers = const [];
+      }
+    } catch (error) {
+      adminErrorMessage = _friendlyErrorMessage(error);
+    } finally {
+      isAdminLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> loadAuditLogs({String search = ''}) async {
     if (!isAdmin) {
       auditLogs = const [];
@@ -555,6 +583,8 @@ class AppController extends ChangeNotifier {
     required String title,
     required String description,
     required List<HealthTipAttachment> attachments,
+    String? targetPatientId,
+    List<String> targetPatientIds = const [],
   }) async {
     if (!canManageHealthTips) {
       healthTipsErrorMessage =
@@ -569,6 +599,10 @@ class AppController extends ChangeNotifier {
     try {
       final now = DateTime.now().toUtc();
       final previous = id == null ? null : _healthTipById(id);
+      final normalizedTargetIds = _normalizedTargetPatientIds(
+        targetPatientIds,
+        legacyTargetPatientId: targetPatientId,
+      );
       final healthTip = HealthTip(
         id: previous?.id ?? id ?? _uuid.v4(),
         title: title.trim(),
@@ -577,6 +611,10 @@ class AppController extends ChangeNotifier {
         createdAt: previous?.createdAt ?? now,
         updatedAt: now,
         createdByEmail: previous?.createdByEmail ?? activeEmail ?? '',
+        targetPatientId: normalizedTargetIds.isEmpty
+            ? null
+            : normalizedTargetIds.first,
+        targetPatientIds: normalizedTargetIds,
       );
 
       final savedHealthTip = isSupabaseConfigured && isSignedIn
@@ -584,6 +622,17 @@ class AppController extends ChangeNotifier {
           : healthTip;
       await LocalStore.upsertHealthTip(savedHealthTip);
       healthTips = LocalStore.loadHealthTips();
+      int? emailedPatientCount;
+      if (previous == null && isSupabaseConfigured && isSignedIn) {
+        try {
+          emailedPatientCount = await SupabaseGateway.emailHealthTipCreated(
+            savedHealthTip,
+          );
+        } catch (error) {
+          healthTipsErrorMessage =
+              'Health teaching saved, but email notification failed: ${_friendlyErrorMessage(error)}';
+        }
+      }
       await _logAuditEvent(
         action: previous == null ? 'health_tip.create' : 'health_tip.update',
         entityType: 'health_tip',
@@ -591,6 +640,13 @@ class AppController extends ChangeNotifier {
         summary: previous == null
             ? 'Created health teaching "${savedHealthTip.title}".'
             : 'Updated health teaching "${savedHealthTip.title}".',
+        metadata: {
+          'has_attachment': savedHealthTip.hasAttachment,
+          'target_patient_count':
+              savedHealthTip.effectiveTargetPatientIds.length,
+          if (emailedPatientCount != null)
+            'emailed_patient_count': emailedPatientCount,
+        },
       );
       return true;
     } catch (error) {
@@ -986,8 +1042,9 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> restoreArchivedSubmission(String clientSubmissionId) async {
-    if (!isAdmin) {
-      adminErrorMessage = 'Only admins can restore archived records.';
+    if (isPatient) {
+      adminErrorMessage =
+          'Only admins and nurses can restore archived records.';
       notifyListeners();
       return;
     }
@@ -1035,8 +1092,9 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> hardDeleteSubmission(String clientSubmissionId) async {
-    if (!isAdmin) {
-      adminErrorMessage = 'Only admins can permanently delete records.';
+    if (isPatient) {
+      adminErrorMessage =
+          'Only admins and nurses can permanently delete records.';
       notifyListeners();
       return;
     }
@@ -1217,6 +1275,25 @@ class AppController extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  List<String> _normalizedTargetPatientIds(
+    List<String> targetPatientIds, {
+    String? legacyTargetPatientId,
+  }) {
+    final seen = <String>{};
+    final normalized = <String>[];
+    for (final rawId in [
+      ...targetPatientIds,
+      if (legacyTargetPatientId != null) legacyTargetPatientId,
+    ]) {
+      final id = rawId.trim();
+      if (id.isEmpty || !seen.add(id)) {
+        continue;
+      }
+      normalized.add(id);
+    }
+    return normalized;
   }
 
   Iterable<HealthSubmission> _mergeRemoteSubmissions(

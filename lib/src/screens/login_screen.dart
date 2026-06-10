@@ -242,7 +242,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     : Icons.visibility_outlined,
               ),
               onPressed: () => setState(
-                  () => _obscureConfirmPassword = !_obscureConfirmPassword),
+                () => _obscureConfirmPassword = !_obscureConfirmPassword,
+              ),
             ),
           ),
           validator: (value) {

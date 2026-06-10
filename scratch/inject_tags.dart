@@ -13,7 +13,7 @@ void main() {
   String replaceNextBlank(String source, String keyword, String tag) {
     final idx = source.indexOf(keyword);
     if (idx == -1) return source;
-    
+
     // Find the next sequence of 5 or more underscores
     final regex = RegExp(r'_{5,}');
     final match = regex.firstMatch(source.substring(idx));
@@ -36,7 +36,11 @@ void main() {
   content = replaceNextBlank(content, '>3', 'third_visit_date');
   content = replaceNextBlank(content, '>Time Started:', 'time_started');
   content = replaceNextBlank(content, '>Time Finished:', 'time_finished');
-  content = replaceNextBlank(content, '>Status of last visit', 'status_of_last_visit');
+  content = replaceNextBlank(
+    content,
+    '>Status of last visit',
+    'status_of_last_visit',
+  );
 
   file.writeAsStringSync(content);
   print('Tags injected successfully.');

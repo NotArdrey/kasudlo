@@ -257,6 +257,11 @@ void main() {
       await tester.tap(find.byTooltip('Edit health teaching'));
       await tester.pumpAndSettle();
       expect(find.text('Edit health teaching'), findsOneWidget);
+      await tester.tap(find.text('Patient One'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Patient Two'));
+      await tester.pumpAndSettle();
+      expect(find.text('2 patients selected'), findsOneWidget);
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Title'),
         'Updated dengue prevention',
@@ -265,6 +270,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(workerController.saveHealthTipCalls, 1);
+      expect(workerController.savedHealthTipTargetPatientIds, [
+        'patient-one',
+        'patient-two',
+      ]);
       expect(find.text('Updated dengue prevention'), findsOneWidget);
 
       await tester.tap(find.byTooltip('Delete health teaching'));
@@ -817,6 +826,12 @@ void main() {
     await tester.tap(_navText('Settings'));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('Change password'));
+    await tester.pumpAndSettle();
+    expect(controller.requestPasswordResetCalls, 1);
+    expect(controller.requestedResetEmail, 'nurse@test.com');
+    expect(find.textContaining('reset link has been sent'), findsOneWidget);
+
     await _scrollUntilVisible(
       tester,
       find.widgetWithText(OutlinedButton, 'Sign Out'),
@@ -940,6 +955,20 @@ class FakeAppController extends AppController {
     activeRole = AccountRole.admin;
     adminUsers = [
       AdminUser(
+        id: 'patient-one',
+        email: 'patient.one@test.com',
+        fullName: 'Patient One',
+        role: AccountRole.patient,
+        createdAt: DateTime(2026, 5, 23),
+      ),
+      AdminUser(
+        id: 'patient-two',
+        email: 'patient.two@test.com',
+        fullName: 'Patient Two',
+        role: AccountRole.patient,
+        createdAt: DateTime(2026, 5, 23),
+      ),
+      AdminUser(
         id: 'admin-user',
         email: 'admin@test.com',
         fullName: 'Admin User',
@@ -1035,6 +1064,24 @@ class FakeAppController extends AppController {
         : 'nurse@test.com';
     activeRole = role;
     submissions = const [];
+    adminUsers = role == AccountRole.patient
+        ? const []
+        : [
+            AdminUser(
+              id: 'patient-one',
+              email: 'patient.one@test.com',
+              fullName: 'Patient One',
+              role: AccountRole.patient,
+              createdAt: DateTime(2026, 5, 23),
+            ),
+            AdminUser(
+              id: 'patient-two',
+              email: 'patient.two@test.com',
+              fullName: 'Patient Two',
+              role: AccountRole.patient,
+              createdAt: DateTime(2026, 5, 23),
+            ),
+          ];
     healthTips = [
       HealthTip(
         id: 'tip-one',
@@ -1129,6 +1176,7 @@ class FakeAppController extends AppController {
   String? createdPatientAccountName;
   String? createdPatientAccountEmail;
   String? createdPatientAccountPassword;
+  List<String> savedHealthTipTargetPatientIds = const [];
 
   @override
   bool get isSupabaseConfigured => false;
@@ -1171,6 +1219,12 @@ class FakeAppController extends AppController {
 
   @override
   Future<void> loadAdminUsers({String search = ''}) async {
+    loadAdminCalls++;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> loadHealthTipPatients() async {
     loadAdminCalls++;
     notifyListeners();
   }
@@ -1325,8 +1379,14 @@ class FakeAppController extends AppController {
     required String title,
     required String description,
     required List<HealthTipAttachment> attachments,
+    String? targetPatientId,
+    List<String> targetPatientIds = const [],
   }) async {
     saveHealthTipCalls++;
+    savedHealthTipTargetPatientIds = [
+      ...targetPatientIds,
+      if (targetPatientId != null) targetPatientId,
+    ];
     HealthTip? existing;
     for (final tip in healthTips) {
       if (tip.id == id) {
@@ -1342,6 +1402,10 @@ class FakeAppController extends AppController {
       createdAt: existing?.createdAt ?? DateTime(2026, 5, 24, 9),
       updatedAt: DateTime(2026, 5, 24, 11, saveHealthTipCalls),
       createdByEmail: existing?.createdByEmail ?? activeEmail ?? '',
+      targetPatientId: savedHealthTipTargetPatientIds.isEmpty
+          ? null
+          : savedHealthTipTargetPatientIds.first,
+      targetPatientIds: savedHealthTipTargetPatientIds,
     );
     healthTips = [
       saved,

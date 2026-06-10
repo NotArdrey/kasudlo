@@ -9,6 +9,26 @@
                 "--dart-define=SUPABASE_URL=https://ombfilswymuhsaovefuc.supabase.co",
                 "--dart-define=SUPABASE_PUBLISHABLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9tYmZpbHN3eW11aHNhb3ZlZnVjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MzU4NDEsImV4cCI6MjA5NTExMTg0MX0.1LaDW6GkH-QYYSLIRQO0Pu8vIy3JG7reDNnVPHxucHk"
             ]
+        },
+        {
+            "name": "Kasudlo (Live Supabase - Brave)",
+            "request": "launch",
+            "type": "dart",
+            "toolArgs": [
+                "--dart-define=SUPABASE_URL=https://ombfilswymuhsaovefuc.supabase.co",
+                "--dart-define=SUPABASE_PUBLISHABLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9tYmZpbHN3eW11aHNhb3ZlZnVjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MzU4NDEsImV4cCI6MjA5NTExMTg0MX0.1LaDW6GkH-QYYSLIRQO0Pu8vIy3JG7reDNnVPHxucHk"
+            ],
+            "env": {
+                "CHROME_EXECUTABLE": "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"
+            }
+        },
+        {
+            "name": "Kasudlo (Demo - Brave)",
+            "request": "launch",
+            "type": "dart",
+            "env": {
+                "CHROME_EXECUTABLE": "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"
+            }
         }
     ]
 }

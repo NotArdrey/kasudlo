@@ -37,7 +37,8 @@ class FindingsScreen extends ConsumerWidget {
           const EmptyState(
             icon: Icons.assignment_outlined,
             title: 'No findings yet',
-            message: 'Your health assessments will appear here once submitted by a nurse.',
+            message:
+                'Your health assessments will appear here once submitted by a nurse.',
           )
         else
           for (final submission in findings)
@@ -49,7 +50,10 @@ class FindingsScreen extends ConsumerWidget {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.description_outlined, color: KasudloColors.primary),
+                        const Icon(
+                          Icons.description_outlined,
+                          color: KasudloColors.primary,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(

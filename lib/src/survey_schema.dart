@@ -235,9 +235,11 @@ SurveyField multiSelectCheckboxField(
   visibleWhen: visibleWhen,
 );
 
-
-
-SurveyField priorityRankingGroupField(String key, String label, {SurveyVisibility? visibleWhen}) {
+SurveyField priorityRankingGroupField(
+  String key,
+  String label, {
+  SurveyVisibility? visibleWhen,
+}) {
   return SurveyField(
     key: key,
     label: label,
@@ -246,7 +248,11 @@ SurveyField priorityRankingGroupField(String key, String label, {SurveyVisibilit
   );
 }
 
-SurveyField mealTimeGroupField(String key, String label, {SurveyVisibility? visibleWhen}) {
+SurveyField mealTimeGroupField(
+  String key,
+  String label, {
+  SurveyVisibility? visibleWhen,
+}) {
   return SurveyField(
     key: key,
     label: label,
@@ -255,7 +261,11 @@ SurveyField mealTimeGroupField(String key, String label, {SurveyVisibility? visi
   );
 }
 
-SurveyField familyNameField(String key, String label, {SurveyVisibility? visibleWhen}) {
+SurveyField familyNameField(
+  String key,
+  String label, {
+  SurveyVisibility? visibleWhen,
+}) {
   return SurveyField(
     key: key,
     label: label,
@@ -650,7 +660,10 @@ final economicIndicatorFields = [
     description:
         "Family's priority by ranking 1-7 where 1 is the highest priority.",
   ),
-  priorityRankingGroupField('priorities_ranking', 'Priorities and Expenditure Ranking'),
+  priorityRankingGroupField(
+    'priorities_ranking',
+    'Priorities and Expenditure Ranking',
+  ),
   selectField('family_income_adequacy', 'Adequacy of family income', [
     'Adequate',
     'Not Adequate',
@@ -1000,22 +1013,37 @@ final lifestylePracticeFields = [
   textField(
     'smoking_frequency_sticks_or_packs_per_day',
     'Frequency/sticks or packs per day',
-    visibleWhen: const SurveyVisibility.equals('has_cigarette_smoker_in_family', 'Yes'),
+    visibleWhen: const SurveyVisibility.equals(
+      'has_cigarette_smoker_in_family',
+      'Yes',
+    ),
   ),
-  tableField('cigarette_smokers', 'Cigarette smoking details', [
-    familyNameField('name', 'Name'),
-    numberField('age', 'Age'),
-    numberField('age_started_smoking', 'Age started smoking'),
-    textField('reason', 'Reason'),
-  ], addButtonLabel: 'Add Smoker', visibleWhen: const SurveyVisibility.equals('has_cigarette_smoker_in_family', 'Yes')),
+  tableField(
+    'cigarette_smokers',
+    'Cigarette smoking details',
+    [
+      familyNameField('name', 'Name'),
+      numberField('age', 'Age'),
+      numberField('age_started_smoking', 'Age started smoking'),
+      textField('reason', 'Reason'),
+    ],
+    addButtonLabel: 'Add Smoker',
+    visibleWhen: const SurveyVisibility.equals(
+      'has_cigarette_smoker_in_family',
+      'Yes',
+    ),
+  ),
   yesNoCheckboxField(
     'uses_prohibited_or_dangerous_drugs',
     'C. Use of prohibited / dangerous drugs',
   ),
   textField(
-    'types_of_drugs', 
+    'types_of_drugs',
     'Types of drugs',
-    visibleWhen: const SurveyVisibility.equals('uses_prohibited_or_dangerous_drugs', 'Yes'),
+    visibleWhen: const SurveyVisibility.equals(
+      'uses_prohibited_or_dangerous_drugs',
+      'Yes',
+    ),
   ),
   tableField(
     'drug_users',
@@ -1027,12 +1055,12 @@ final lifestylePracticeFields = [
       textField('reason', 'Reason'),
     ],
     addButtonLabel: 'Add Drug User',
-    visibleWhen: const SurveyVisibility.equals('uses_prohibited_or_dangerous_drugs', 'Yes'),
+    visibleWhen: const SurveyVisibility.equals(
+      'uses_prohibited_or_dangerous_drugs',
+      'Yes',
+    ),
   ),
-  yesNoCheckboxField(
-    'has_alcohol_drinker',
-    'D. Drinks alcoholic beverages',
-  ),
+  yesNoCheckboxField('has_alcohol_drinker', 'D. Drinks alcoholic beverages'),
   tableField(
     'alcohol_drinkers',
     'Alcoholic beverages drinker details',
@@ -1077,10 +1105,7 @@ final nutritionalStatusFields = [
     addButtonLabel: 'Add Child',
     visibleWhen: const SurveyVisibility.equals('has_children_under_5', 'Yes'),
   ),
-  dateField(
-    'food_recall_date',
-    'Date of Food Recall',
-  ),
+  dateField('food_recall_date', 'Date of Food Recall'),
   mealTimeGroupField(
     'food_recall_24_hour',
     'B. Dietary History: 24-Hour Food Recall',
@@ -1101,11 +1126,11 @@ final nutritionalStatusFields = [
     'Other first food choice',
     visibleWhen: const SurveyVisibility.equals('first_food_choice', 'Others'),
   ),
-  singleSelectCheckboxField('first_food_choice_servings', 'b. Number of servings', [
-    '1',
-    '2-3',
-    '4-5 and above',
-  ]),
+  singleSelectCheckboxField(
+    'first_food_choice_servings',
+    'b. Number of servings',
+    ['1', '2-3', '4-5 and above'],
+  ),
   singleSelectCheckboxField('second_food_choice', 'c. Second choice', [
     'Meat',
     'Fish',
@@ -1118,11 +1143,11 @@ final nutritionalStatusFields = [
     'Other second food choice',
     visibleWhen: const SurveyVisibility.equals('second_food_choice', 'Others'),
   ),
-  singleSelectCheckboxField('second_food_choice_servings', 'd. Number of servings', [
-    '1',
-    '2-3',
-    '4-5 and above',
-  ]),
+  singleSelectCheckboxField(
+    'second_food_choice_servings',
+    'd. Number of servings',
+    ['1', '2-3', '4-5 and above'],
+  ),
   multiSelectCheckboxField('reason_for_food_choices', 'D. Reason for choices', [
     'It is healthy',
     'Own preference',
@@ -1287,30 +1312,25 @@ final communityHealthProgramFields = [
       'Others',
     ),
   ),
-  tableField(
-    'immunization_records',
-    'Immunization records',
-    [
-      familyNameField('name', 'Name'),
-      numberField('age_in_mos', 'Age in mos'),
-      selectField('gender', 'Gender', ['Male', 'Female']),
-      booleanField('bcg', 'BCG'),
-      booleanField('dpt_1', 'DPT 1'),
-      booleanField('dpt_2', 'DPT 2'),
-      booleanField('dpt_3', 'DPT 3'),
-      booleanField('hepa_b_1', 'Hepa B 1'),
-      booleanField('hepa_b_2', 'Hepa B 2'),
-      booleanField('hepa_b_3', 'Hepa B 3'),
-      booleanField('opv_1', 'OPV 1'),
-      booleanField('opv_2', 'OPV 2'),
-      booleanField('opv_3', 'OPV 3'),
-      booleanField('measles', 'Measles'),
-      booleanField('complete_according_to_age', 'Complete according to Age'),
-      booleanField('incomplete_according_to_age', 'Incomplete accdg to Age'),
-      booleanField('fully_immunized_child', 'Fully Immunized Child'),
-    ],
-    addButtonLabel: 'Add Record',
-  ),
+  tableField('immunization_records', 'Immunization records', [
+    familyNameField('name', 'Name'),
+    numberField('age_in_mos', 'Age in mos'),
+    selectField('gender', 'Gender', ['Male', 'Female']),
+    booleanField('bcg', 'BCG'),
+    booleanField('dpt_1', 'DPT 1'),
+    booleanField('dpt_2', 'DPT 2'),
+    booleanField('dpt_3', 'DPT 3'),
+    booleanField('hepa_b_1', 'Hepa B 1'),
+    booleanField('hepa_b_2', 'Hepa B 2'),
+    booleanField('hepa_b_3', 'Hepa B 3'),
+    booleanField('opv_1', 'OPV 1'),
+    booleanField('opv_2', 'OPV 2'),
+    booleanField('opv_3', 'OPV 3'),
+    booleanField('measles', 'Measles'),
+    booleanField('complete_according_to_age', 'Complete according to Age'),
+    booleanField('incomplete_according_to_age', 'Incomplete accdg to Age'),
+    booleanField('fully_immunized_child', 'Fully Immunized Child'),
+  ], addButtonLabel: 'Add Record'),
   yesNoCheckboxField(
     'has_pregnant_woman',
     'Is there any pregnant woman living in the house?',
@@ -1340,10 +1360,11 @@ final communityHealthProgramFields = [
     visibleWhen: const SurveyVisibility.equals('has_pregnant_woman', 'Yes'),
   ),
   yesNoCheckboxField('family_planning_eligible', 'Family planning eligible'),
-  singleSelectCheckboxField('family_planning_status', 'Family planning status', [
-    'Acceptor',
-    'Non-Acceptor',
-  ]),
+  singleSelectCheckboxField(
+    'family_planning_status',
+    'Family planning status',
+    ['Acceptor', 'Non-Acceptor'],
+  ),
   multiSelectCheckboxField(
     'family_planning_acceptor_reasons',
     'Acceptor reasons',
@@ -1431,7 +1452,10 @@ final healthIndicatorFields = [
   headingField('health_indicators_heading', '5. Health Indicators'),
   tableField('morbidity_records', 'A. Morbidity records', [
     familyNameField('name', 'Name'),
-    selectField('age', 'Age', ['< 1', ...List.generate(100, (i) => (i + 1).toString())]),
+    selectField('age', 'Age', [
+      '< 1',
+      ...List.generate(100, (i) => (i + 1).toString()),
+    ]),
     selectField('gender', 'Gender', ['Male', 'Female']),
     textField('cause', 'Cause (Specify)'),
     booleanField('intervention_with', 'With Intervention'),
@@ -1448,19 +1472,28 @@ final healthIndicatorFields = [
     'B. Mortality records',
     [
       familyNameField('name', 'Name'),
-      selectField('age', 'Age', ['< 1', ...List.generate(100, (i) => (i + 1).toString())]),
+      selectField('age', 'Age', [
+        '< 1',
+        ...List.generate(100, (i) => (i + 1).toString()),
+      ]),
       selectField('gender', 'Gender', ['Male', 'Female']),
       textField('cause_of_death', 'Cause of death (Specify)'),
     ],
     addButtonLabel: 'Add Record',
-    visibleWhen: const SurveyVisibility.equals('has_mortality_past_12_months', 'Yes'),
+    visibleWhen: const SurveyVisibility.equals(
+      'has_mortality_past_12_months',
+      'Yes',
+    ),
   ),
   tableField(
     'non_communicable_disease_records',
     'C. History/ Presence of Non Communicable Disease in the Family',
     [
       familyNameField('name', 'Name'),
-      selectField('age', 'Age', ['< 1', ...List.generate(100, (i) => (i + 1).toString())]),
+      selectField('age', 'Age', [
+        '< 1',
+        ...List.generate(100, (i) => (i + 1).toString()),
+      ]),
       selectField('gender', 'Gender', ['Male', 'Female']),
       textField('ncd', 'NCD (Specify)'),
     ],
@@ -1471,7 +1504,10 @@ final healthIndicatorFields = [
     'D. History / Presence of Communicable Disease in the Family',
     [
       familyNameField('name', 'Name'),
-      selectField('age', 'Age', ['< 1', ...List.generate(100, (i) => (i + 1).toString())]),
+      selectField('age', 'Age', [
+        '< 1',
+        ...List.generate(100, (i) => (i + 1).toString()),
+      ]),
       selectField('gender', 'Gender', ['Male', 'Female']),
       textField('cd', 'CD (Specify)'),
     ],

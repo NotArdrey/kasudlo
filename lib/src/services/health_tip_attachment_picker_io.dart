@@ -20,7 +20,7 @@ Future<PickedHealthTipAttachment?> pickHealthTipAttachment() async {
   final pickedFile = result.files.first;
   final filePath = pickedFile.path;
   if (filePath == null) return null;
-  
+
   final file = File(filePath);
   final bytes = await file.readAsBytes();
   return PickedHealthTipAttachment(

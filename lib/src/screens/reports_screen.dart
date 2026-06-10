@@ -5,13 +5,14 @@ import 'package:intl/intl.dart';
 
 import '../assessment_options.dart';
 import '../models.dart';
-import '../services/report_exporter.dart';
+import '../services/report_exporter_miniword.dart';
 import '../state/app_controller.dart';
 import '../survey_schema.dart';
 import '../theme.dart';
 import '../widgets/account_request_fields.dart';
 import '../widgets/ai_guidance_card.dart';
 import '../widgets/app_chrome.dart';
+import '../widgets/archived_reports_card.dart';
 import '../widgets/survey_form.dart';
 
 class ReportsScreen extends ConsumerWidget {
@@ -47,6 +48,18 @@ class ReportsScreen extends ConsumerWidget {
             onEdit: (submission) => _showEditSheet(context, ref, submission),
             onDelete: (submission) => _confirmArchive(context, ref, submission),
           ),
+          if (!controller.isPatient) ...[
+            const SizedBox(height: 24),
+            ArchivedReportsCard(
+              submissions: controller.archivedSubmissions,
+              loading: controller.isAdminActionBusy,
+              errorMessage: controller.adminErrorMessage,
+              onRestore: (submission) =>
+                  _confirmRestoreArchived(context, ref, submission),
+              onHardDelete: (submission) =>
+                  _confirmHardDeleteArchived(context, ref, submission),
+            ),
+          ],
         ],
       ],
     );
@@ -129,6 +142,88 @@ class ReportsScreen extends ConsumerWidget {
       context,
     ).showSnackBar(const SnackBar(content: Text('Report record archived.')));
   }
+
+  Future<void> _confirmRestoreArchived(
+    BuildContext context,
+    WidgetRef ref,
+    HealthSubmission submission,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Restore archived record?'),
+        content: Text(
+          'Return ${submission.respondentName.trim().isEmpty ? 'Unnamed record' : submission.respondentName.trim()} to reports?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.restore_outlined),
+            label: const Text('Restore'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    await ref
+        .read(appControllerProvider)
+        .restoreArchivedSubmission(submission.clientSubmissionId);
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Record restored.')));
+  }
+
+  Future<void> _confirmHardDeleteArchived(
+    BuildContext context,
+    WidgetRef ref,
+    HealthSubmission submission,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Permanently delete record?'),
+        content: Text(
+          'This will permanently remove ${submission.respondentName.trim().isEmpty ? 'Unnamed record' : submission.respondentName.trim()} from the archive.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.delete_forever_outlined),
+            label: const Text('Delete Forever'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    await ref
+        .read(appControllerProvider)
+        .hardDeleteSubmission(submission.clientSubmissionId);
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Record permanently deleted.')),
+    );
+  }
 }
 
 class _ReportRecordsCard extends ConsumerStatefulWidget {
@@ -152,7 +247,7 @@ class _ReportRecordsCardState extends ConsumerState<_ReportRecordsCard> {
   final _searchController = TextEditingController();
   final _selectedSubmissionIds = <String>{};
   String _query = '';
-  ReportExportFormat? _exportingFormat;
+  ReportExportFormatLegacy? _exportingFormatLegacy;
   bool _isAnalyzingWithAi = false;
 
   @override
@@ -192,7 +287,7 @@ class _ReportRecordsCardState extends ConsumerState<_ReportRecordsCard> {
         )
         .toList();
     final selectedCount = selectedSubmissions.length;
-    final isExporting = _exportingFormat != null;
+    final isExporting = _exportingFormatLegacy != null;
     final listMaxHeight = (MediaQuery.sizeOf(context).height * 0.48)
         .clamp(320.0, 560.0)
         .toDouble();
@@ -226,30 +321,19 @@ class _ReportRecordsCardState extends ConsumerState<_ReportRecordsCard> {
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              if (false) ...[
-                OutlinedButton.icon(
-                  onPressed: selectedCount == 0 || isExporting
-                      ? null
-                      : () => _exportSelected(ReportExportFormat.pdf),
-                  icon: _ExportButtonIcon(
-                    format: ReportExportFormat.pdf,
-                    exportingFormat: _exportingFormat,
-                    idleIcon: Icons.picture_as_pdf_outlined,
-                  ),
-                  label: const Text('Export PDF'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: selectedCount == 0 || isExporting
-                      ? null
-                      : () => _exportSelected(ReportExportFormat.docs),
-                  icon: _ExportButtonIcon(
-                    format: ReportExportFormat.docs,
-                    exportingFormat: _exportingFormat,
-                    idleIcon: Icons.description_outlined,
-                  ),
-                  label: const Text('Export Docs'),
-                ),
-              ],
+              OutlinedButton.icon(
+                onPressed: selectedCount != 1 || isExporting
+                    ? null
+                    : () =>
+                          _exportSelectedLegacy(ReportExportFormatLegacy.docs),
+                icon: _exportingFormatLegacy == ReportExportFormatLegacy.docs
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.description_outlined),
+                label: const Text('Export Docs'),
+              ),
               TextButton.icon(
                 onPressed: filteredSubmissions.isEmpty
                     ? null
@@ -287,14 +371,12 @@ class _ReportRecordsCardState extends ConsumerState<_ReportRecordsCard> {
           ),
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 180),
-            child: _exportingFormat == null && !_isAnalyzingWithAi
+            child: !_isAnalyzingWithAi
                 ? const SizedBox.shrink()
                 : Padding(
-                    key: ValueKey(_exportingFormat ?? _isAnalyzingWithAi),
+                    key: ValueKey(_isAnalyzingWithAi),
                     padding: const EdgeInsets.only(top: 12),
-                    child: _exportingFormat != null
-                        ? _ExportProgressStatus(format: _exportingFormat!)
-                        : const _AiProgressStatus(),
+                    child: const _AiProgressStatus(),
                   ),
           ),
           const SizedBox(height: 12),
@@ -376,7 +458,7 @@ class _ReportRecordsCardState extends ConsumerState<_ReportRecordsCard> {
     setState(() => _selectedSubmissionIds.clear());
   }
 
-  Future<void> _exportSelected(ReportExportFormat format) async {
+  Future<void> _exportSelectedLegacy(ReportExportFormatLegacy format) async {
     final selectedSubmissions = widget.submissions
         .where(
           (submission) =>
@@ -391,10 +473,10 @@ class _ReportRecordsCardState extends ConsumerState<_ReportRecordsCard> {
       return;
     }
 
-    setState(() => _exportingFormat = format);
+    setState(() => _exportingFormatLegacy = format);
 
     try {
-      final result = await exportReportRecords(
+      final result = await exportReportRecordsMiniword(
         submissions: selectedSubmissions,
         format: format,
       );
@@ -419,7 +501,7 @@ class _ReportRecordsCardState extends ConsumerState<_ReportRecordsCard> {
       );
     } finally {
       if (mounted) {
-        setState(() => _exportingFormat = null);
+        setState(() => _exportingFormatLegacy = null);
       }
     }
   }
@@ -471,7 +553,8 @@ class _ReportRecordsCardState extends ConsumerState<_ReportRecordsCard> {
         builder: (context) => AlertDialog(
           title: const Text('Analysis Complete'),
           content: Text(
-            'Successfully analyzed $successCount $label with AI.$failureText',
+            'Successfully analyzed $successCount $label with AI.$failureText\n\n'
+            'You can view the AI analysis by clicking the info icon (i) next to the record and looking at the "AI Health Guidance" section.',
           ),
           actions: [
             TextButton(
@@ -491,68 +574,6 @@ class _ReportRecordsCardState extends ConsumerState<_ReportRecordsCard> {
         setState(() => _isAnalyzingWithAi = false);
       }
     }
-  }
-}
-
-class _ExportButtonIcon extends StatelessWidget {
-  const _ExportButtonIcon({
-    required this.format,
-    required this.exportingFormat,
-    required this.idleIcon,
-  });
-
-  final ReportExportFormat format;
-  final ReportExportFormat? exportingFormat;
-  final IconData idleIcon;
-
-  @override
-  Widget build(BuildContext context) {
-    if (exportingFormat != format) {
-      return Icon(idleIcon);
-    }
-
-    return const SizedBox.square(
-      dimension: 18,
-      child: CircularProgressIndicator(strokeWidth: 2.2),
-    );
-  }
-}
-
-class _ExportProgressStatus extends StatelessWidget {
-  const _ExportProgressStatus({required this.format});
-
-  final ReportExportFormat format;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colorScheme.primaryContainer.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colorScheme.primary.withValues(alpha: 0.18)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox.square(
-              dimension: 18,
-              child: CircularProgressIndicator(strokeWidth: 2.2),
-            ),
-            const SizedBox(width: 10),
-            Flexible(
-              child: Text(
-                'Preparing ${format.label} download...',
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 

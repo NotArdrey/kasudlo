@@ -21,9 +21,11 @@ class AiGuidanceEditorDialogState extends State<AiGuidanceEditorDialog> {
     super.initState();
     _summaryController = TextEditingController(text: widget.guidance.summary);
     _concerningController = TextEditingController(
-        text: widget.guidance.concerningFindings.join('\n'));
+      text: widget.guidance.concerningFindings.join('\n'),
+    );
     _actionsController = TextEditingController(
-        text: widget.guidance.recommendedActions.join('\n'));
+      text: widget.guidance.recommendedActions.join('\n'),
+    );
     _riskLevel = widget.guidance.riskLevel.toLowerCase();
     if (!['urgent', 'high', 'moderate', 'low'].contains(_riskLevel)) {
       _riskLevel = 'unknown';
@@ -73,8 +75,10 @@ class AiGuidanceEditorDialogState extends State<AiGuidanceEditorDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('Risk Level',
-                        style: Theme.of(context).textTheme.labelLarge),
+                    Text(
+                      'Risk Level',
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       value: _riskLevel,
@@ -83,12 +87,20 @@ class AiGuidanceEditorDialogState extends State<AiGuidanceEditorDialog> {
                         contentPadding: EdgeInsets.symmetric(horizontal: 12),
                       ),
                       items: const [
-                        DropdownMenuItem(value: 'urgent', child: Text('Urgent')),
+                        DropdownMenuItem(
+                          value: 'urgent',
+                          child: Text('Urgent'),
+                        ),
                         DropdownMenuItem(value: 'high', child: Text('High')),
                         DropdownMenuItem(
-                            value: 'moderate', child: Text('Moderate')),
+                          value: 'moderate',
+                          child: Text('Moderate'),
+                        ),
                         DropdownMenuItem(value: 'low', child: Text('Low')),
-                        DropdownMenuItem(value: 'unknown', child: Text('Unknown')),
+                        DropdownMenuItem(
+                          value: 'unknown',
+                          child: Text('Unknown'),
+                        ),
                       ],
                       onChanged: (value) {
                         if (value != null) {
@@ -97,8 +109,10 @@ class AiGuidanceEditorDialogState extends State<AiGuidanceEditorDialog> {
                       },
                     ),
                     const SizedBox(height: 16),
-                    Text('Summary',
-                        style: Theme.of(context).textTheme.labelLarge),
+                    Text(
+                      'Summary',
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _summaryController,
@@ -108,8 +122,10 @@ class AiGuidanceEditorDialogState extends State<AiGuidanceEditorDialog> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Text('Concerning Findings (One per line)',
-                        style: Theme.of(context).textTheme.labelLarge),
+                    Text(
+                      'Concerning Findings (One per line)',
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _concerningController,
@@ -119,8 +135,10 @@ class AiGuidanceEditorDialogState extends State<AiGuidanceEditorDialog> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Text('Suggested Actions (One per line)',
-                        style: Theme.of(context).textTheme.labelLarge),
+                    Text(
+                      'Suggested Actions (One per line)',
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _actionsController,

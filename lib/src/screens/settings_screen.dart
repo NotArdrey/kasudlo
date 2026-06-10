@@ -42,11 +42,10 @@ class SettingsScreen extends ConsumerWidget {
             _SettingTile(
               icon: Icons.key_outlined,
               title: 'Change password',
-              subtitle: 'Use the reset flow for this account',
-              onTap: () => _showSettingsMessage(
-                context,
-                'Password reset is managed through your sign-in provider.',
-              ),
+              subtitle: 'Email a reset link to this account',
+              onTap: controller.isBusy
+                  ? null
+                  : () => _sendPasswordReset(context, ref),
             ),
             _SettingTile(
               icon: Icons.alternate_email,
@@ -67,8 +66,6 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ],
         ),
-
-
 
         AppCard(
           child: Column(
@@ -107,6 +104,27 @@ class SettingsScreen extends ConsumerWidget {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _sendPasswordReset(BuildContext context, WidgetRef ref) async {
+    final controller = ref.read(appControllerProvider);
+    final email = controller.activeEmail?.trim() ?? '';
+    if (email.isEmpty) {
+      _showSettingsMessage(context, 'No account email is available.');
+      return;
+    }
+
+    await controller.requestPasswordReset(email);
+    if (!context.mounted) {
+      return;
+    }
+
+    _showSettingsMessage(
+      context,
+      controller.passwordResetMessage ??
+          controller.errorMessage ??
+          'Password reset request finished.',
+    );
   }
 }
 

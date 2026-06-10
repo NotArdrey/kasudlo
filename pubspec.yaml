@@ -43,16 +43,17 @@ dependencies:
   fl_chart: ^1.2.0
   uuid: ^4.5.3
   crypto: ^3.0.3
-  pdf: ^3.12.0
   sqflite_common: ^2.5.8
   sqflite_common_ffi: ^2.3.7+1
   sqflite_common_ffi_web: ^1.0.2
   path: ^1.9.1
+
   http: ^1.6.0
   xml: ^6.6.1
   archive: ^4.0.9
   sqflite: ^2.4.2+1
   file_picker: 8.1.4
+  pdf: ^3.12.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -83,19 +84,9 @@ flutter:
     - assets/fonts/Roboto-BoldItalic.ttf
     - assets/template/college-of-nursing.png
     - assets/template/bulacan-state-university.png
-    - assets/template/cdx_pdf/page-01.png
-    - assets/template/cdx_pdf/page-02.png
-    - assets/template/cdx_pdf/page-03.png
-    - assets/template/cdx_pdf/page-04.png
-    - assets/template/cdx_pdf/page-05.png
-    - assets/template/cdx_pdf/page-06.png
     - assets/template/cdx_template.docx
-    - assets/images/kasudlo_logo.png
-
-  # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+    - assets/template/miniword_template.docx
+    - assets/images/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
